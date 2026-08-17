@@ -1,0 +1,234 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #f7f7f8;
+  --color-fg: #1a1a1a;
+  --color-muted: #8b8b8b;
+  --color-accent: #6366f1;
+  --color-border: #e5e5e5;
+  --color-card: #ffffff;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+/* ---- Markdown 内容排版 ---- */
+.prose-content {
+  font-size: 1rem;
+  line-height: 1.85;
+  color: var(--color-fg);
+}
+
+.prose-content h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.prose-content h2 {
+  font-size: 1.375rem;
+  font-weight: 600;
+  margin-top: 2.25rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.prose-content h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-content h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-content p {
+  margin-bottom: 1.1rem;
+}
+
+.prose-content a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: opacity 0.2s;
+}
+
+.prose-content a:hover {
+  opacity: 0.7;
+}
+
+.prose-content ul,
+.prose-content ol {
+  margin-bottom: 1.1rem;
+  padding-left: 1.5rem;
+}
+
+.prose-content li {
+  margin-bottom: 0.35rem;
+}
+
+.prose-content ul li {
+  list-style: disc;
+}
+
+.prose-content ol li {
+  list-style: decimal;
+}
+
+.prose-content blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 1rem;
+  margin: 1.25rem 0;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.prose-content code:not(pre code) {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.875rem;
+  background-color: rgba(99, 102, 241, 0.08);
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+}
+
+.prose-content pre {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  background-color: #1e1e2e;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.prose-content pre code {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Monaco, Consolas, monospace;
+  background: none;
+  padding: 0;
+}
+
+.prose-content img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin: 1.25rem 0;
+}
+
+.prose-content hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 2rem 0;
+}
+
+.prose-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+  font-size: 0.9rem;
+}
+
+.prose-content th,
+.prose-content td {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.prose-content th {
+  background-color: rgba(0, 0, 0, 0.02);
+  font-weight: 600;
+}
+
+/* ---- Prism 代码高亮主题（类 One Dark） ---- */
+.prose-content .token.comment,
+.prose-content .token.prolog,
+.prose-content .token.doctype,
+.prose-content .token.cdata {
+  color: #7c7c99;
+  font-style: italic;
+}
+
+.prose-content .token.punctuation {
+  color: #c1c1d0;
+}
+
+.prose-content .token.property,
+.prose-content .token.tag,
+.prose-content .token.boolean,
+.prose-content .token.number,
+.prose-content .token.constant,
+.prose-content .token.symbol {
+  color: #f78c6c;
+}
+
+.prose-content .token.selector,
+.prose-content .token.attr-name,
+.prose-content .token.string,
+.prose-content .token.char,
+.prose-content .token.builtin,
+.prose-content .token.inserted {
+  color: #c3e88d;
+}
+
+.prose-content .token.operator,
+.prose-content .token.entity,
+.prose-content .token.url,
+.prose-content .token.variable {
+  color: #89ddff;
+}
+
+.prose-content .token.atrule,
+.prose-content .token.attr-value,
+.prose-content .token.keyword {
+  color: #c792ea;
+}
+
+.prose-content .token.function,
+.prose-content .token.class-name {
+  color: #82aaff;
+}
+
+.prose-content .token.regex,
+.prose-content .token.important {
+  color: #ffcb6b;
+}
+
+/* ---- 滚动条美化 ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+/* ---- 选中文本 ---- */
+::selection {
+  background-color: rgba(99, 102, 241, 0.2);
+}
