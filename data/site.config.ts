@@ -1,6 +1,6 @@
 export const siteConfig = {
-  name: "张翔翔",
-  title: "张翔翔的个人站点",
+  name: "张湘湘",
+  title: "张湘湘的个人站点",
   description: "Web 工程师，自由职业者",
   subtitle: "Web 工程师，自由职业者",
   worksTitle: "工作，是为了自由",
