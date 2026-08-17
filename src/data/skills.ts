@@ -1,7 +1,4 @@
-export interface SkillGroup {
-  title: string;
-  items: string[];
-}
+import type { SkillGroup } from "@/types";
 
 export const skillGroups: SkillGroup[] = [
   {

@@ -1,11 +1,6 @@
-export interface SocialLink {
-  label: string;
-  href: string;
-  icon: "mail" | "messagecircle" | "github" | "twitter" | "bookopen";
-  type: "internal" | "external" | "email" | "wechat";
-}
+import type { SocialLink, NavLink } from "@/types";
 
-export const navLinks: { label: string; href: string }[] = [
+export const navLinks: NavLink[] = [
   { label: "作品", href: "/works" },
   { label: "博客", href: "/blog" },
 ];

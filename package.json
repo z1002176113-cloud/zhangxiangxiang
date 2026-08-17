@@ -1,12 +1,17 @@
 {
   "name": "zhangxiangxiang-personal-site",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "description": "张湘湘的个人站点 - Next.js + TypeScript + Tailwind CSS",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "lint:fix": "next lint --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\" \"*.{ts,mjs,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,md}\" \"*.{ts,mjs,json}\"",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "next": "14.2.5",
@@ -32,6 +37,12 @@
     "postcss": "^8.4.40",
     "autoprefixer": "^10.4.19",
     "eslint": "^8.57.0",
-    "eslint-config-next": "14.2.5"
+    "eslint-config-next": "14.2.5",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "prettier-plugin-tailwindcss": "^0.6.6"
+  },
+  "engines": {
+    "node": ">=18.17.0"
   }
 }

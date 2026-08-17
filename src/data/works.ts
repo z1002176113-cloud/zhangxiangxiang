@@ -1,11 +1,4 @@
-export interface WorkItem {
-  date: string;
-  title: string;
-  tags: string[];
-  description: string;
-  link?: string;
-  linkLabel?: string;
-}
+import type { WorkItem } from "@/types";
 
 export const works: WorkItem[] = [
   {

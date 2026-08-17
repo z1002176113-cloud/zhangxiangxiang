@@ -1,5 +1,6 @@
 import { Mail, MessageCircle, Github, Twitter, BookOpen } from "lucide-react";
-import { socialLinks, type SocialLink } from "@/data/social.links";
+import { socialLinks } from "@/data/social.links";
+import type { SocialLink } from "@/types";
 
 const iconMap = {
   mail: Mail,

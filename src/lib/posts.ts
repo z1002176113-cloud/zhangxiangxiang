@@ -8,6 +8,7 @@ import remarkRehype from "remark-rehype";
 import rehypeSlug from "rehype-slug";
 import rehypePrism from "rehype-prism-plus";
 import rehypeStringify from "rehype-stringify";
+import type { PostMeta, Post } from "@/types";
 
 const BLOG_DIR = path.join(process.cwd(), "content", "blog");
 
@@ -16,19 +17,6 @@ function dateToString(date: unknown): string {
     return date.toISOString().split("T")[0];
   }
   return String(date ?? "");
-}
-
-export interface PostMeta {
-  slug: string;
-  title: string;
-  date: string;
-  category: string;
-  summary: string;
-  tags?: string[];
-}
-
-export interface Post extends PostMeta {
-  contentHtml: string;
 }
 
 function getSlugs(): string[] {

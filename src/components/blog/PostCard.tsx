@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { PostMeta } from "@/lib/posts";
+import type { PostMeta } from "@/types";
 import { formatDate } from "@/lib/date";
 
 export function PostCard({ post }: { post: PostMeta }) {
