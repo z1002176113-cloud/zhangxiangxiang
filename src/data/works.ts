@@ -2,6 +2,24 @@ import type { WorkItem } from "@/types";
 
 export const works: WorkItem[] = [
   {
+    date: "2026-08",
+    title: "英语单词记录 - Chrome 扩展",
+    tags: ["Chrome Extension", "Manifest V3", "JavaScript"],
+    description:
+      "一款 Chrome Manifest V3 浏览器扩展，帮助用户在浏览英文网页时随手记录生词，自动获取词性和中文释义，方便后续复习。",
+    link: "https://github.com/z1002176113-cloud/English-word-record",
+    linkLabel: "查看源码",
+  },
+  {
+    date: "2026-08",
+    title: "字符串对比 - Chrome 扩展",
+    tags: ["Chrome Extension", "Manifest V3", "JavaScript"],
+    description:
+      "一个 Chrome 浏览器扩展 (Manifest V3)，用于在浏览器中本地对比两段文本的差异。粘贴两段文本到左右两栏，一键即可看到字符级或行级差异高亮，全程不联网、不上传、零依赖。",
+    link: "https://github.com/z1002176113-cloud/string-comparison",
+    linkLabel: "查看源码",
+  },
+  {
     date: "2024-06",
     title: "个人站点重构",
     tags: ["Next.js", "TypeScript", "Tailwind CSS"],
