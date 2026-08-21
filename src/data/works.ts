@@ -2,7 +2,7 @@ import type { WorkItem } from "@/types";
 
 export const works: WorkItem[] = [
   {
-    date: "2026-08",
+    date: "2026-08-20",
     title: "英语单词记录 - Chrome 扩展",
     tags: ["Chrome Extension", "Manifest V3", "JavaScript"],
     description:
@@ -11,7 +11,7 @@ export const works: WorkItem[] = [
     linkLabel: "查看源码",
   },
   {
-    date: "2026-08",
+    date: "2026-08-19",
     title: "字符串对比 - Chrome 扩展",
     tags: ["Chrome Extension", "Manifest V3", "JavaScript"],
     description:
