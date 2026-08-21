@@ -52,6 +52,21 @@ export function WorkTimeline() {
                 <span aria-hidden>→</span>
               </a>
             )}
+
+            {/* 视频播放 */}
+            {work.video && (
+              <div className="mt-4 overflow-hidden rounded-lg border border-border/60 bg-black/5">
+                <video
+                  src={work.video}
+                  controls
+                  preload="metadata"
+                  playsInline
+                  className="h-auto w-full"
+                >
+                  您的浏览器不支持 HTML5 视频播放。
+                </video>
+              </div>
+            )}
           </article>
         ))}
       </div>

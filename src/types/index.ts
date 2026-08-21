@@ -30,6 +30,8 @@ export interface WorkItem {
   description: string;
   link?: string;
   linkLabel?: string;
+  /** 视频文件路径（相对于 public 目录，以 / 开头） */
+  video?: string;
 }
 
 /** 文章元信息 */

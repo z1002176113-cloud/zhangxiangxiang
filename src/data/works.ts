@@ -2,6 +2,14 @@ import type { WorkItem } from "@/types";
 
 export const works: WorkItem[] = [
   {
+    date: "2026-08-21",
+    title: "故事转手绘视频",
+    tags: ["视频", "手绘", "Node.js", "自动化"],
+    description:
+      "基于 Node.js 自动化脚本，将故事图片序列转换为带有手绘风格转场动画的无声视频，配合剧情节奏逐帧呈现画面过渡效果。",
+    video: "/videos/picture_silent.mp4",
+  },
+  {
     date: "2026-08-20",
     title: "英语单词记录 - Chrome 扩展",
     tags: ["Chrome Extension", "Manifest V3", "JavaScript"],
