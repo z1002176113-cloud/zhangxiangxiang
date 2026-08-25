@@ -2,13 +2,6 @@ import type { WorkItem } from "@/types";
 
 export const works: WorkItem[] = [
   {
-    date: "2026-08-24",
-    title: "第一版需求",
-    tags: ["需求", "产品", "规划"],
-    description:
-      "第一版需求完成，基于 JS 基础的继续学习，梳理功能清单与实现路径。",
-  },
-  {
     date: "2026-08-21",
     title: "故事转手绘视频",
     tags: ["视频", "手绘", "Node.js", "自动化"],
