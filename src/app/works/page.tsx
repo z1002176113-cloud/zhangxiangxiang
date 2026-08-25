@@ -32,15 +32,17 @@ export default function WorksPage() {
       </div>
 
       {/* 合作说明 */}
-      <p className="mt-8 text-sm leading-relaxed text-muted">
-        {siteConfig.worksIntro}
-        <a
-          href={`mailto:${siteConfig.email}`}
-          className="text-accent underline underline-offset-2 transition-opacity hover:opacity-70"
-        >
-          {siteConfig.email}
-        </a>
-      </p>
+      {siteConfig.worksIntro && (
+        <p className="mt-8 text-sm leading-relaxed text-muted">
+          {siteConfig.worksIntro}
+          <a
+            href={`mailto:${siteConfig.email}`}
+            className="text-accent underline underline-offset-2 transition-opacity hover:opacity-70"
+          >
+            {siteConfig.email}
+          </a>
+        </p>
+      )}
 
       {/* 作品时间线 */}
       <div className="mt-12">

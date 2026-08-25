@@ -1,6 +1,7 @@
 export const tools: string[] = [
   "Mac",
   "VSCode",
+  "Trae",
   "Git",
   "Chrome",
   "Firefox",
