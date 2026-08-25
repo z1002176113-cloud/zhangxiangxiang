@@ -1,4 +1,4 @@
-import { Mail, MessageCircle, Github, Twitter, BookOpen } from "lucide-react";
+import { Mail, MessageCircle, Github, BookOpen } from "lucide-react";
 import { socialLinks } from "@/data/social.links";
 import type { SocialLink } from "@/types";
 
@@ -6,9 +6,10 @@ const iconMap = {
   mail: Mail,
   messagecircle: MessageCircle,
   github: Github,
-  twitter: Twitter,
   bookopen: BookOpen,
 };
+
+const wechatId = "Zhangxiax2";
 
 export function SocialLinks() {
   return (
@@ -32,10 +33,10 @@ function SocialItem({ link }: { link: SocialLink }) {
     return (
       <span
         className={`${baseClass} cursor-pointer select-none`}
-        title="微信扫码添加"
+        title={`微信：${wechatId}`}
       >
         <Icon className="h-3.5 w-3.5" />
-        {link.label}
+        {wechatId}
       </span>
     );
   }

@@ -9,7 +9,7 @@ export const siteConfig: SiteConfig = {
   worksIntro: "",
   blogTitle: "闭门造轮子",
   blogSubtitle: "造轮子工程师的代码笔记",
-  email: "zhangxiangxiang@example.com",
+  email: "z1002176113@gmail.com",
   url: "https://zhangxiangxiang.com",
   sinceYear: 2026,
 };

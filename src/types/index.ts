@@ -6,7 +6,7 @@
 export interface SocialLink {
   label: string;
   href: string;
-  icon: "mail" | "messagecircle" | "github" | "twitter" | "bookopen";
+  icon: "mail" | "messagecircle" | "github" | "bookopen";
   type: "internal" | "external" | "email" | "wechat";
 }
 

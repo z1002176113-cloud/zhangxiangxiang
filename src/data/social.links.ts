@@ -14,25 +14,19 @@ export const socialLinks: SocialLink[] = [
   },
   {
     label: "GitHub",
-    href: "https://github.com/zhangxiangxiang",
+    href: "https://github.com/z1002176113-cloud",
     icon: "github",
     type: "external",
   },
   {
-    label: "Twitter",
-    href: "https://twitter.com/zhangxiangxiang",
-    icon: "twitter",
-    type: "external",
-  },
-  {
     label: "知乎",
-    href: "https://www.zhihu.com/people/zhangxiangxiang",
+    href: "https://www.zhihu.com/people/xzx1-66",
     icon: "bookopen",
     type: "external",
   },
   {
     label: "Email",
-    href: "mailto:zhangxiangxiang@example.com",
+    href: "mailto:z1002176113@gmail.com",
     icon: "mail",
     type: "email",
   },
