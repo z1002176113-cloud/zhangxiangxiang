@@ -86,6 +86,137 @@ const RPS_BEATS: Record<RPSChoice, RPSChoice> = {
   paper: "rock",
 };
 
+// ========== 新增：多功能模块（对话 / 识图 / 备忘 / 录制 / 资料 / 查询）==========
+
+// 对话消息
+interface ChatMessage {
+  id: string;
+  role: "user" | "bot";
+  text: string;
+  time: number;
+}
+
+// 备忘录条目
+interface Memo {
+  id: string;
+  title: string;
+  content: string;
+  time: number; // 提醒时间戳
+  notified?: boolean; // 是否已弹过提醒
+}
+
+// 资料库条目（错题 / 收集的选中文本）
+interface LibEntry {
+  id: string;
+  title: string;
+  text: string;
+  time: number;
+}
+
+// 虚拟文件夹记录（浏览器无法真正建文件夹，仅记录下载文件的元数据）
+interface VirtualFile {
+  id: string;
+  name: string;
+  kind: "image" | "video";
+  time: number;
+}
+
+// 侧边功能面板选项卡
+const SIDE_TABS = [
+  { key: "chat", label: "💬 对话" },
+  { key: "food", label: "🍎 识图" },
+  { key: "memo", label: "📝 备忘" },
+  { key: "capture", label: "🎬 录制" },
+  { key: "lib", label: "📚 资料" },
+  { key: "search", label: "🔍 查询" },
+] as const;
+type SideTab = (typeof SIDE_TABS)[number]["key"];
+
+// 新增数据的 localStorage 存储键
+const CHAT_KEY = "my-baby-pet-chat";
+const MEMO_KEY = "my-baby-pet-memos";
+const LIB_KEY = "my-baby-pet-library";
+const FILES_KEY = "my-baby-pet-files";
+
+// 通用 localStorage 工具（读取容错、写入容错）
+function loadJSON<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+function saveJSON(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* 存储失败静默处理 */
+  }
+}
+
+// 生成简单唯一 id
+function uid() {
+  return Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+}
+
+// 模拟识图：把识别出的食物映射到背包道具类型（与商城投喂逻辑复用）
+const FOOD_MAP: { name: string; item: ItemType }[] = [
+  { name: "小鱼干", item: "fish" },
+  { name: "香煎三文鱼", item: "fish" },
+  { name: "烤鱼", item: "fish" },
+  { name: "爱心便当", item: "heart" },
+  { name: "草莓蛋糕", item: "heart" },
+  { name: "爱心饼干", item: "heart" },
+  { name: "水果糖", item: "candy" },
+  { name: "巧克力", item: "candy" },
+  { name: "棉花糖", item: "candy" },
+];
+
+// 模拟 AI 对话回复（按关键词匹配；预留真实大模型接口，见 sendChat 内注释）
+function simulateAIReply(userText: string): string {
+  const t = userText.toLowerCase();
+  if (t.includes("你好") || t.includes("hi") || t.includes("hello") || t.includes("嗨"))
+    return "你好呀！我是 My Baby，很高兴见到你 😊";
+  if (t.includes("名字") || t.includes("是谁")) return "我叫 My Baby，是你的专属桌宠！";
+  if (t.includes("猜拳")) return "来猜拳呀！点桌宠工具栏的 ✊ 按钮就能玩啦～";
+  if (t.includes("冷静") || t.includes("生气") || t.includes("消气"))
+    return "如果你惹我生气了，我会进入冷静模式 1 小时。投喂小鱼干、爱心或糖果可以让我提前消气哦～";
+  if (t.includes("备忘") || t.includes("提醒"))
+    return "记得用「备忘」功能设置提醒时间，到点我会用系统通知叫你！";
+  if (t.includes("吃") || t.includes("饿") || t.includes("识别"))
+    return "在「识图」里上传食物图片，我能把它变成背包道具，随时可以投喂～";
+  if (t.includes("截图") || t.includes("录屏") || t.includes("录制"))
+    return "用「录制」功能可以捕获屏幕：截图或录视频，下载保存到本地～";
+  if (t.includes("资料") || t.includes("收藏") || t.includes("错题"))
+    return "在页面上选中任意文字，然后点一下我，就能自动收藏到资料库啦！";
+  if (t.includes("查询") || t.includes("搜索"))
+    return "用「查询」功能输入关键词，我能帮你搜索并解析重点（目前是模拟结果）～";
+  if (t.includes("谢谢") || t.includes("感谢") || t.includes("爱你"))
+    return "不客气！能帮到你就太好啦 💖";
+  if (t.includes("再见") || t.includes("拜拜") || t.includes("晚安"))
+    return "拜拜～记得常来看我哦！👋";
+  return "嗯嗯，我在听呢～（这是模拟回复，接入大模型后我会更聪明！）";
+}
+
+// 浏览器原生语音识别构造器（SpeechRecognition，仅 HTTPS/localhost 可用）
+type SRInstance = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((_e: any) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((_e: any) => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+const SRCtor: (new () => SRInstance) | undefined =
+  typeof window !== "undefined"
+    ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    : undefined;
+
 // 猜拳按钮手势图标（统一的白色线性风格）
 // fill 为 none、stroke 继承按钮文字色（深色按钮上显示为白色线条）
 function RPSIcon({ choice }: { choice: RPSChoice }) {
@@ -199,11 +330,15 @@ export function DesktopPet() {
   const [emoji, setEmoji] = useState<string | null>(null);
   const [showClose, setShowClose] = useState(false);
 
-  // ---- 新增：持久化状态（localStorage）----
-  const [calmUntil, setCalmUntil] = useState<number | null>(null); // 冷静截止时间
-  const [scratchCount, setScratchCount] = useState(0); // 挠痒累计次数
+  // ---- 新增：持久化状态（localStorage，惰性初始化，避免挂载时被空值覆盖）----
+  const [calmUntil, setCalmUntil] = useState<number | null>(() =>
+    loadPersisted().calmUntil
+  ); // 冷静截止时间
+  const [scratchCount, setScratchCount] = useState(() =>
+    loadPersisted().scratchCount
+  ); // 挠痒累计次数
   const [items, setItems] = useState<Record<ItemType, number>>(
-    DEFAULT_PERSISTED.items
+    () => loadPersisted().items
   );
 
   // ---- 新增：UI 面板状态 ----
@@ -218,6 +353,52 @@ export function DesktopPet() {
 
   // ---- 新增：互动状态（点击桌宠激活，鼠标离开退出）----
   const [interactionActive, setInteractionActive] = useState(false); // 是否处于手势监听状态
+
+  // ---- 新增：多功能侧边面板 ----
+  const [showSide, setShowSide] = useState(false); // 侧边面板开关
+  const [sideTab, setSideTab] = useState<SideTab>("chat"); // 当前激活的选项卡
+
+  // ---- 新增：对话模块 ----
+  const [chats, setChats] = useState<ChatMessage[]>(() =>
+    loadJSON<ChatMessage[]>(CHAT_KEY, [])
+  ); // 对话记录（localStorage 惰性初始化）
+  const [chatInput, setChatInput] = useState(""); // 输入框文本
+  const [isThinking, setIsThinking] = useState(false); // AI 回复中
+  const [isListening, setIsListening] = useState(false); // 语音识别中
+  const [micDenied, setMicDenied] = useState(false); // 麦克风授权被拒
+
+  // ---- 新增：识图投喂 ----
+  const [recognizing, setRecognizing] = useState(false); // 模拟识别中
+
+  // ---- 新增：备忘录 ----
+  const [memos, setMemos] = useState<Memo[]>(() =>
+    loadJSON<Memo[]>(MEMO_KEY, [])
+  ); // 备忘录列表（localStorage 惰性初始化）
+  const [memoTitle, setMemoTitle] = useState("");
+  const [memoContent, setMemoContent] = useState("");
+  const [memoTime, setMemoTime] = useState(""); // datetime-local 字符串
+
+  // ---- 新增：截图 / 录屏（虚拟文件夹）----
+  const [vfiles, setVfiles] = useState<VirtualFile[]>(() =>
+    loadJSON<VirtualFile[]>(FILES_KEY, [])
+  ); // 虚拟文件记录（localStorage 惰性初始化）
+  const [recording, setRecording] = useState(false); // 是否正在录屏
+
+  // ---- 新增：资料库（错题 / 选中文本收集）----
+  const [library, setLibrary] = useState<LibEntry[]>(() =>
+    loadJSON<LibEntry[]>(LIB_KEY, [])
+  ); // 资料列表（localStorage 惰性初始化）
+  const [renamingId, setRenamingId] = useState<string | null>(null); // 正在重命名的条目
+  const [renameVal, setRenameVal] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null); // 展开查看的条目
+
+  // ---- 新增：资料查询 ----
+  const [searchKw, setSearchKw] = useState("");
+  const [searchResults, setSearchResults] = useState<
+    { title: string; url: string; snippet: string }[] | null
+  >(null);
+  const [parsing, setParsing] = useState(false); // 智能解析中
+  const [searchSummary, setSearchSummary] = useState<string | null>(null);
 
   // ---- 新增：猜拳弹窗定位 ----
   const [smoothShift, setSmoothShift] = useState(false); // 桌宠平滑上移/回位过渡标记
@@ -253,6 +434,13 @@ export function DesktopPet() {
     gestureDone: false,
   });
 
+  // ---- 新增：多功能模块 refs ----
+  const sidePanelRef = useRef<HTMLDivElement>(null); // 侧边面板（用于测量定位）
+  const foodInputRef = useRef<HTMLInputElement>(null); // 隐藏的图片选择框
+  const srRef = useRef<SRInstance | null>(null); // 语音识别实例
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null); // 录屏实例
+  const mediaStreamRef = useRef<MediaStream | null>(null); // 屏幕捕获流
+
   // ---- 初始化位置（右下角）----
   useEffect(() => {
     setPosition({
@@ -261,13 +449,8 @@ export function DesktopPet() {
     });
   }, []);
 
-  // ---- 新增：挂载时从 localStorage 加载持久化状态 ----
-  useEffect(() => {
-    const s = loadPersisted();
-    setCalmUntil(s.calmUntil);
-    setScratchCount(s.scratchCount);
-    setItems(s.items);
-  }, []);
+  // （持久化数据已通过 useState 惰性初始化加载，无需挂载时再 setState，
+  //   避免保存 effect 用初始空值覆盖 localStorage）
 
   // ---- 新增：持久化状态变化时写入 localStorage ----
   useEffect(() => {
@@ -276,6 +459,59 @@ export function DesktopPet() {
       JSON.stringify({ calmUntil, scratchCount, items })
     );
   }, [calmUntil, scratchCount, items]);
+
+  // ---- 新增：多功能模块数据变化时写入 localStorage ----
+  useEffect(() => {
+    saveJSON(CHAT_KEY, chats);
+  }, [chats]);
+  useEffect(() => {
+    saveJSON(MEMO_KEY, memos);
+  }, [memos]);
+  useEffect(() => {
+    saveJSON(LIB_KEY, library);
+  }, [library]);
+  useEffect(() => {
+    saveJSON(FILES_KEY, vfiles);
+  }, [vfiles]);
+
+  // ---- 新增：备忘录到点提醒（每 10s 检查一次，弹出桌面通知）----
+  useEffect(() => {
+    const check = () => {
+      const now = Date.now();
+      setMemos((prev) => {
+        let changed = false;
+        const next = prev.map((m) => {
+          if (!m.notified && m.time <= now) {
+            changed = true;
+            // 桌面通知（需要 HTTPS/localhost + 用户授权）
+            if (
+              typeof Notification !== "undefined" &&
+              Notification.permission === "granted"
+            ) {
+              try {
+                const n = new Notification("⏰ 备忘录提醒", {
+                  body: `${m.title}：${m.content || "时间到了！"}`,
+                  tag: m.id,
+                });
+                n.onclick = () => {
+                  window.focus();
+                  n.close();
+                };
+              } catch {
+                /* 通知失败静默处理 */
+              }
+            }
+            return { ...m, notified: true };
+          }
+          return m;
+        });
+        return changed ? next : prev;
+      });
+    };
+    check();
+    const id = setInterval(check, 10000);
+    return () => clearInterval(id);
+  }, []);
 
   // ---- 新增：每秒检查冷静是否到期 / 更新剩余秒数 ----
   useEffect(() => {
@@ -516,6 +752,387 @@ export function DesktopPet() {
     stateTimerRef.current = setTimeout(() => setState("idle"), 1500);
   };
 
+  // ========== 新增：对话模块 ==========
+  // ---- 预留：接入真实大模型对话接口（模拟逻辑占位，后续替换）----
+  // const LLM_API_URL = "https://your-llm-endpoint/v1/chat/completions";
+  // const LLM_API_KEY = "sk-xxx"; // 生产环境务必放服务端，勿暴露前端
+  // const chatWithAI = async (history: { role: "user" | "assistant"; content: string }[]) => {
+  //   const res = await fetch(LLM_API_URL, {
+  //     method: "POST",
+  //     headers: {
+  //       "Content-Type": "application/json",
+  //       Authorization: `Bearer ${LLM_API_KEY}`,
+  //     },
+  //     body: JSON.stringify({
+  //       model: "gpt-4o-mini",
+  //       messages: history,
+  //     }),
+  //   });
+  //   const data = await res.json();
+  //   return data.choices[0].message.content as string;
+  // };
+
+  // 追加一条对话消息（最多保留 50 条）
+  const pushChat = (role: "user" | "bot", text: string) => {
+    setChats((prev) => {
+      const next = [...prev, { id: uid(), role, text, time: Date.now() }];
+      return next.length > 50 ? next.slice(next.length - 50) : next;
+    });
+  };
+
+  // 发送文字消息（模拟 AI 回复；接入真实大模型后改为异步调用 chatWithAI）
+  const sendChat = () => {
+    const text = chatInput.trim();
+    if (!text || isThinking || isListening) return;
+    if (calmUntil && calmUntil > Date.now()) {
+      showBubble("我在冷静中，不想聊天…");
+      return;
+    }
+    pushChat("user", text);
+    setChatInput("");
+    setIsThinking(true);
+    // 模拟思考延迟
+    setTimeout(() => {
+      pushChat("bot", simulateAIReply(text));
+      setIsThinking(false);
+    }, 600 + Math.random() * 700);
+  };
+
+  // 语音输入：浏览器原生 SpeechRecognition（仅 HTTPS/localhost 可用）
+  const toggleListen = () => {
+    // 正在识别 → 停止
+    if (isListening) {
+      srRef.current?.stop();
+      return;
+    }
+    if (!SRCtor) {
+      showBubble("当前浏览器不支持语音识别（需要 HTTPS/localhost）");
+      return;
+    }
+    if (!window.isSecureContext) {
+      showBubble("语音识别仅支持 HTTPS/localhost 环境");
+      return;
+    }
+    // 先请求麦克风授权（授权成功后立即释放轨道，SpeechRecognition 自行管理录音）
+    navigator.mediaDevices
+      ?.getUserMedia({ audio: true })
+      .then((stream) => {
+        stream.getTracks().forEach((t) => t.stop());
+        const rec = new SRCtor();
+        rec.lang = "zh-CN";
+        rec.interimResults = true;
+        rec.continuous = false;
+        rec.onresult = (e: any) => {
+          let final = "";
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) final += e.results[i][0].transcript;
+          }
+          if (final) setChatInput((prev) => (prev ? prev + final : final));
+        };
+        rec.onerror = (e: any) => {
+          if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+            setMicDenied(true);
+            showBubble("麦克风授权被拒绝，无法使用语音输入");
+          } else if (e.error === "no-speech") {
+            showBubble("没有听到声音，请再试一次");
+          }
+          setIsListening(false);
+        };
+        rec.onend = () => setIsListening(false);
+        srRef.current = rec;
+        setMicDenied(false);
+        setIsListening(true);
+        rec.start();
+      })
+      .catch(() => {
+        setMicDenied(true);
+        showBubble("麦克风授权被拒绝，无法使用语音输入");
+      });
+  };
+
+  // ========== 新增：识图投喂模块 ==========
+  // ---- 预留：接入真实图片识别 API ----
+  // const OCR_API_URL = "https://your-ocr-endpoint/recognize";
+  // const recognizeImage = async (file: File) => {
+  //   const form = new FormData();
+  //   form.append("image", file);
+  //   const res = await fetch(OCR_API_URL, { method: "POST", body: form });
+  //   const data = await res.json();
+  //   return data.foodName; // 返回识别出的食物名称
+  // };
+
+  // 处理用户选择的图片：模拟识别 → 生成投喂道具存入背包（复用商城投喂逻辑）
+  const handleFoodFile = (file: File) => {
+    if (!file) return;
+    setRecognizing(true);
+    showBubble("正在识别图片中的食物…🔍");
+    // 模拟识别耗时（接入真实 API 后替换为异步请求 recognizeImage）
+    setTimeout(() => {
+      const food = FOOD_MAP[Math.floor(Math.random() * FOOD_MAP.length)];
+      const qty = 1 + Math.floor(Math.random() * 3);
+      setItems((prev) => ({ ...prev, [food.item]: prev[food.item] + qty }));
+      setRecognizing(false);
+      showBubble(`识别到「${food.name}」×${qty}，已存入背包！🍽️`);
+    }, 900);
+  };
+
+  // ========== 新增：备忘录模块 ==========
+  // 请求桌面通知授权（需要 HTTPS/localhost）
+  const requestNotifyPermission = () => {
+    if (typeof Notification === "undefined") {
+      showBubble("当前环境不支持桌面通知（需要 HTTPS/localhost）");
+      return;
+    }
+    if (!window.isSecureContext) {
+      showBubble("桌面通知仅支持 HTTPS/localhost 环境");
+      return;
+    }
+    Notification.requestPermission().then((p) => {
+      if (p === "granted") showBubble("桌面通知已开启 ✅");
+      else showBubble("通知权限未开启，到点将无法弹窗提醒");
+    });
+  };
+
+  // 新增备忘录
+  const addMemo = () => {
+    const title = memoTitle.trim() || "未命名提醒";
+    const content = memoContent.trim();
+    const t = memoTime ? new Date(memoTime).getTime() : 0;
+    if (!t) {
+      showBubble("请先设置提醒时间");
+      return;
+    }
+    setMemos((prev) => [...prev, { id: uid(), title, content, time: t }]);
+    setMemoTitle("");
+    setMemoContent("");
+    setMemoTime("");
+    showBubble("备忘录已添加 ✅");
+  };
+
+  // 删除备忘录
+  const deleteMemo = (id: string) => {
+    setMemos((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  // ========== 新增：截图 / 录屏模块（虚拟文件夹） ==========
+  // 添加一条虚拟文件记录
+  const addVFile = (name: string, kind: "image" | "video") => {
+    setVfiles((prev) => [{ id: uid(), name, kind, time: Date.now() }, ...prev]);
+  };
+  const deleteVFile = (id: string) => {
+    setVfiles((prev) => prev.filter((f) => f.id !== id));
+  };
+  const clearVFiles = () => {
+    setVfiles([]);
+    showBubble("虚拟文件夹记录已清空");
+  };
+
+  // 屏幕捕获可用性检查（getDisplayMedia 需要 HTTPS/localhost + 用户手动选择）
+  const captureHint = (): boolean => {
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getDisplayMedia
+    ) {
+      showBubble("当前环境不支持屏幕捕获（需要 HTTPS/localhost）");
+      return false;
+    }
+    if (!window.isSecureContext) {
+      showBubble("屏幕捕获仅支持 HTTPS/localhost 环境");
+      return false;
+    }
+    return true;
+  };
+
+  // 截图：屏幕捕获 → 画布绘制 → 下载图片 + 记录虚拟文件夹
+  const takeScreenshot = async () => {
+    if (!captureHint()) return;
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+      });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
+      await new Promise((r) => setTimeout(r, 250)); // 等首帧渲染
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      stream.getTracks().forEach((t) => t.stop());
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const name = `截图_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.png`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+        addVFile(name, "image");
+        showBubble("截图已下载，并记录到图片文件夹 📸");
+      }, "image/png");
+    } catch {
+      showBubble("已取消屏幕捕获");
+    }
+  };
+
+  // 录屏：MediaRecorder 录制 → 停止后下载 webm + 记录虚拟文件夹
+  const toggleRecording = async () => {
+    if (recording) {
+      // 结束录制
+      mediaRecorderRef.current?.stop();
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    if (!captureHint()) return;
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+      });
+      mediaStreamRef.current = stream;
+      const mr = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      mr.onstop = () => {
+        const blob = new Blob(chunks, { type: "video/webm" });
+        const name = `录屏_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.webm`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+        stream.getTracks().forEach((t) => t.stop());
+        setRecording(false);
+        addVFile(name, "video");
+        showBubble("录屏已下载，并记录到视频文件夹 🎬");
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setRecording(true);
+      // 用户点击浏览器"停止共享"时同步结束录制
+      stream.getVideoTracks()[0].onended = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+          mediaRecorderRef.current.stop();
+        }
+      };
+    } catch {
+      showBubble("已取消屏幕捕获");
+    }
+  };
+
+  // ========== 新增：错题 / 资料收集模块 ==========
+  // 抓取页面当前选中的文字（抓取后清空选中状态并返回文本）
+  const capturePageSelection = (): string => {
+    const sel = window.getSelection?.();
+    if (!sel || sel.isCollapsed) return "";
+    const text = sel.toString().trim();
+    if (text) {
+      sel.removeAllRanges();
+      return text;
+    }
+    return "";
+  };
+
+  // 保存一条资料（默认标题取文本前 14 字）
+  const saveToLibrary = (text: string) => {
+    const title = text.length > 14 ? text.slice(0, 14) + "…" : text;
+    setLibrary((prev) => [{ id: uid(), title, text, time: Date.now() }, ...prev]);
+  };
+
+  const deleteLib = (id: string) => {
+    setLibrary((prev) => prev.filter((l) => l.id !== id));
+  };
+
+  const startRename = (id: string, cur: string) => {
+    setRenamingId(id);
+    setRenameVal(cur);
+  };
+
+  const commitRename = (id: string) => {
+    const val = renameVal.trim();
+    if (val) {
+      setLibrary((prev) => prev.map((l) => (l.id === id ? { ...l, title: val } : l)));
+    }
+    setRenamingId(null);
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  };
+
+  // ========== 新增：资料查询模块 ==========
+  // ---- 预留：接入第三方搜索引擎接口 ----
+  // const SEARCH_API_URL = "https://your-search-api?q=";
+  // const searchWeb = async (kw: string) => {
+  //   const res = await fetch(SEARCH_API_URL + encodeURIComponent(kw));
+  //   const data = await res.json();
+  //   return data.results as { title: string; url: string; snippet: string }[];
+  // };
+
+  // 模拟搜索：返回占位结果（接入真实搜索 API 后替换为 searchWeb）
+  const simulateSearch = (kw: string) => {
+    const q = kw.trim();
+    if (!q) {
+      showBubble("请输入查询关键词");
+      return;
+    }
+    setSearchSummary(null);
+    setSearchResults([
+      {
+        title: `${q} - 百科词条`,
+        url: `https://example.com/wiki/${encodeURIComponent(q)}`,
+        snippet: `关于「${q}」的百科介绍（模拟结果）。接入真实搜索 API 后将返回实时网页内容。`,
+      },
+      {
+        title: `${q} 相关教程`,
+        url: `https://example.com/tutorial/${encodeURIComponent(q)}`,
+        snippet: "（模拟结果）相关教程与经验分享。",
+      },
+      {
+        title: `${q} 热门问答`,
+        url: `https://example.com/qa/${encodeURIComponent(q)}`,
+        snippet: "（模拟结果）社区精选问答。",
+      },
+    ]);
+  };
+
+  // 进阶智能解析：把搜索结果交给大模型总结（模拟；预留接口模板见注释）
+  const simulateParse = () => {
+    if (!searchResults) {
+      showBubble("请先执行搜索");
+      return;
+    }
+    setParsing(true);
+    // ---- 预留：把 searchResults 作为上下文提交给大模型 ----
+    // const summarizeResults = async (results: typeof searchResults) => {
+    //   const res = await fetch(LLM_API_URL, {
+    //     method: "POST",
+    //     headers: {
+    //       "Content-Type": "application/json",
+    //       Authorization: `Bearer ${LLM_API_KEY}`,
+    //     },
+    //     body: JSON.stringify({
+    //       model: "gpt-4o-mini",
+    //       messages: [
+    //         { role: "user", content: "请用中文总结以下搜索结果的要点：" + JSON.stringify(results) },
+    //       ],
+    //     }),
+    //   });
+    //   const data = await res.json();
+    //   return data.choices[0].message.content as string;
+    // };
+    setTimeout(() => {
+      setParsing(false);
+      setSearchSummary(
+        `（模拟总结）针对「${searchKw}」的搜索结果共 ${searchResults.length} 条：以上为模拟结果，暂未接入真实搜索引擎与大模型。接入后我将帮你提炼重点、对比结论。`
+      );
+    }, 1000);
+  };
+
   // ========== 指针交互（点击激活 + 手势识别）==========
   // 规则：
   // 1. 拖动移动功能已删除，鼠标滑动不再移动桌宠，桌宠位置不受鼠标影响
@@ -532,6 +1149,13 @@ export function DesktopPet() {
       showBubble(`我在冷静中…剩余 ${formatCalm(calmUntil - Date.now())}`);
       gestureRef.current.zone = "none";
       return;
+    }
+
+    // 抓取页面选中文字 → 自动收藏到资料库（点击桌宠即收集）
+    const selText = capturePageSelection();
+    if (selText) {
+      saveToLibrary(selText);
+      showBubble("已收藏到资料库 📚");
     }
 
     e.preventDefault();
@@ -679,7 +1303,7 @@ export function DesktopPet() {
     return () => window.removeEventListener("resize", handleResize);
   }, [clampPosition]);
 
-  // 清理定时器（原逻辑 + 过渡计时器）
+  // 清理定时器（原逻辑 + 过渡计时器 + 录屏/语音资源）
   useEffect(() => {
     return () => {
       if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
@@ -687,6 +1311,10 @@ export function DesktopPet() {
       if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
       if (pendingCalmRef.current) clearTimeout(pendingCalmRef.current);
       if (shiftTimerRef.current) clearTimeout(shiftTimerRef.current);
+      // 卸载时释放录屏与语音资源
+      mediaRecorderRef.current?.stop();
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      srRef.current?.stop();
     };
   }, []);
 
@@ -748,6 +1376,53 @@ export function DesktopPet() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showGame]);
+
+  // ---- 新增：侧边面板定位（依附桌宠 + 边界检测 + 避让情绪气泡）----
+  useEffect(() => {
+    if (!showSide) return;
+    // 面板打开期间暂停自动漫游，保证桌宠位置稳定、面板不会跟着跑
+    wanderRef.current.isWandering = false;
+    wanderRef.current.pauseUntil = performance.now() + 3600 * 1000;
+    setState("idle");
+    // 等一帧确保面板渲染完成、能测量到实际宽高
+    const raf = requestAnimationFrame(() => {
+      const petEl = petRef.current;
+      const panelEl = sidePanelRef.current;
+      if (!petEl || !panelEl) return;
+      const petRect = petEl.getBoundingClientRect();
+      const panelW = panelEl.offsetWidth;
+      const panelH = panelEl.offsetHeight;
+      // 水平：默认放在桌宠右侧；右侧放不下则翻转到左侧，左边缘再兜底
+      let left = petRect.width + 8;
+      if (petRect.right + 8 + panelW > window.innerWidth) {
+        left = -panelW - 8;
+      }
+      if (petRect.left + left < 8) left = 8 - petRect.left;
+      // 垂直：以桌宠中心为基准；有气泡时避让气泡区域（气泡在桌宠上方）；
+      // 同时夹紧在视口内，若空间不足则优先保证不超出屏幕
+      let top = petRect.height / 2 - panelH / 2;
+      const bubbleMin = bubble ? -(PET_SIZE + 8) : -Infinity;
+      const viewportMin = 8 - petRect.top;
+      const viewportMax = window.innerHeight - 8 - panelH - petRect.top;
+      const minTop = Math.max(bubbleMin, viewportMin);
+      if (minTop > viewportMax) {
+        top = Math.max(0, viewportMax);
+      } else {
+        top = Math.min(Math.max(top, minTop), viewportMax);
+      }
+      panelEl.style.left = `${left}px`;
+      panelEl.style.top = `${top}px`;
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSide, sideTab, bubble]);
+
+  // 关闭侧边面板：恢复自动漫游
+  useEffect(() => {
+    if (showSide) return;
+    wanderRef.current.isWandering = false;
+    wanderRef.current.pauseUntil = performance.now() + 600;
+  }, [showSide]);
 
   // 动画状态类名映射
   const petAnimClass = {
@@ -820,7 +1495,7 @@ export function DesktopPet() {
           draggable={false}
         />
 
-        {/* ---- 新增：工具栏（猜拳 / 商城）---- */}
+        {/* ---- 新增：工具栏（猜拳 / 商城 / 功能面板）---- */}
         <div className="pet-toolbar">
           <button
             className="pet-tool-btn"
@@ -835,6 +1510,7 @@ export function DesktopPet() {
               }
               setShowGame((v) => !v);
               setShowShop(false);
+              setShowSide(false);
             }}
           >
             ✊
@@ -847,9 +1523,23 @@ export function DesktopPet() {
               e.stopPropagation();
               setShowShop((v) => !v);
               setShowGame(false);
+              setShowSide(false);
             }}
           >
             🛍️
+          </button>
+          <button
+            className="pet-tool-btn"
+            aria-label="功能面板"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowSide((v) => !v);
+              setShowGame(false);
+              setShowShop(false);
+            }}
+          >
+            🧰
           </button>
         </div>
 
@@ -931,6 +1621,362 @@ export function DesktopPet() {
             >
               关闭
             </button>
+          </div>
+        )}
+
+        {/* ---- 新增：多功能悬浮侧边面板（对话 / 识图 / 备忘 / 录制 / 资料 / 查询）---- */}
+        {showSide && (
+          <div
+            ref={sidePanelRef}
+            className="pet-panel pet-side-panel"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="pet-side-head">
+              <span className="pet-panel-title">功能面板</span>
+              <button
+                className="pet-side-close"
+                onClick={() => setShowSide(false)}
+                aria-label="关闭面板"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* 选项卡 */}
+            <div className="pet-side-tabs">
+              {SIDE_TABS.map((t) => (
+                <button
+                  key={t.key}
+                  className={`pet-side-tab${sideTab === t.key ? " active" : ""}`}
+                  onClick={() => setSideTab(t.key)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="pet-side-body">
+              {/* ---- 模块1：对话（文字 + 语音）---- */}
+              {sideTab === "chat" && (
+                <div className="pet-chat">
+                  <div className="pet-chat-list">
+                    {chats.length === 0 && (
+                      <div className="pet-chat-empty">
+                        和我聊聊吧~ 支持文字或语音输入 💬
+                      </div>
+                    )}
+                    {chats.map((c) => (
+                      <div key={c.id} className={`pet-chat-msg ${c.role}`}>
+                        {c.text}
+                      </div>
+                    ))}
+                    {isThinking && <div className="pet-chat-msg bot">正在思考…</div>}
+                  </div>
+                  <div className="pet-chat-input-row">
+                    <input
+                      className="pet-chat-input"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") sendChat();
+                      }}
+                      placeholder="输入消息…"
+                      maxLength={300}
+                    />
+                    <button
+                      className="pet-chat-mic"
+                      disabled={!SRCtor || micDenied}
+                      title={
+                        !SRCtor
+                          ? "当前浏览器不支持语音识别（需要 HTTPS/localhost）"
+                          : micDenied
+                            ? "麦克风授权被拒绝"
+                            : isListening
+                              ? "点击停止"
+                              : "语音输入"
+                      }
+                      onClick={toggleListen}
+                    >
+                      {isListening ? "◼" : "🎤"}
+                    </button>
+                    <button
+                      className="pet-chat-send"
+                      onClick={sendChat}
+                      disabled={!chatInput.trim() || isThinking}
+                    >
+                      发送
+                    </button>
+                  </div>
+                  <p className="pet-hint-muted">
+                    语音识别需要 HTTPS/localhost 环境与麦克风授权；AI 回复为模拟逻辑，
+                    预留真实大模型接口位置。
+                  </p>
+                </div>
+              )}
+
+              {/* ---- 模块2：识图投喂 ---- */}
+              {sideTab === "food" && (
+                <div className="pet-food">
+                  <p className="pet-hint">
+                    上传食物图片，自动识别并转换为背包投喂道具。
+                  </p>
+                  <input
+                    ref={foodInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFoodFile(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    className="pet-upload-btn"
+                    disabled={recognizing}
+                    onClick={() => foodInputRef.current?.click()}
+                  >
+                    {recognizing ? "识别中…" : "📤 上传图片识别"}
+                  </button>
+                  <p className="pet-hint-muted">
+                    当前为模拟识别（预留真实识图 API 接口）。识别得到的道具可在
+                    「商城」背包投喂，用来解除桌宠冷静状态。
+                  </p>
+                </div>
+              )}
+
+              {/* ---- 模块3：备忘录提醒 ---- */}
+              {sideTab === "memo" && (
+                <div className="pet-memo">
+                  <div className="pet-memo-form">
+                    <input
+                      className="pet-memo-input"
+                      value={memoTitle}
+                      onChange={(e) => setMemoTitle(e.target.value)}
+                      placeholder="标题"
+                      maxLength={30}
+                    />
+                    <input
+                      className="pet-memo-input"
+                      value={memoContent}
+                      onChange={(e) => setMemoContent(e.target.value)}
+                      placeholder="内容（可选）"
+                      maxLength={80}
+                    />
+                    <input
+                      className="pet-memo-input"
+                      type="datetime-local"
+                      value={memoTime}
+                      onChange={(e) => setMemoTime(e.target.value)}
+                    />
+                    <div className="pet-memo-actions">
+                      <button className="pet-item-btn" onClick={addMemo}>
+                        添加提醒
+                      </button>
+                      <button
+                        className="pet-item-btn secondary"
+                        onClick={requestNotifyPermission}
+                      >
+                        开启通知
+                      </button>
+                    </div>
+                    <p className="pet-hint-muted">
+                      {typeof Notification !== "undefined" &&
+                      Notification.permission === "granted"
+                        ? "桌面通知已开启 ✅ 到点自动提醒"
+                        : "桌面通知需要 HTTPS/localhost 环境与授权"}
+                    </p>
+                  </div>
+                  <div className="pet-memo-list">
+                    {memos.length === 0 && (
+                      <div className="pet-chat-empty">暂无备忘录</div>
+                    )}
+                    {memos.map((m) => (
+                      <div key={m.id} className="pet-memo-item">
+                        <div className="pet-memo-item-top">
+                          <b>{m.title}</b>
+                          <button
+                            className="pet-lib-del"
+                            onClick={() => deleteMemo(m.id)}
+                            title="删除"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        {m.content && (
+                          <div className="pet-memo-item-content">{m.content}</div>
+                        )}
+                        <div className="pet-memo-item-time">
+                          ⏰{" "}
+                          {new Date(m.time).toLocaleString("zh-CN", {
+                            hour12: false,
+                          })}
+                          {m.notified ? " · 已提醒" : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ---- 模块4：截图 / 录屏（虚拟文件夹）---- */}
+              {sideTab === "capture" && (
+                <div className="pet-capture">
+                  <p className="pet-hint">
+                    屏幕捕获需要 HTTPS/localhost 环境，且需在浏览器弹窗中手动确认选择。
+                  </p>
+                  <div className="pet-capture-btns">
+                    <button className="pet-upload-btn" onClick={takeScreenshot}>
+                      📸 截图
+                    </button>
+                    <button
+                      className={`pet-upload-btn${recording ? " recording" : ""}`}
+                      onClick={toggleRecording}
+                    >
+                      {recording ? "⏹ 结束录制" : "🎥 开始录制"}
+                    </button>
+                  </div>
+                  <div className="pet-file-list">
+                    <div className="pet-file-head">
+                      <span>📁 虚拟文件夹（文件记录）</span>
+                      {vfiles.length > 0 && (
+                        <button className="pet-lib-del" onClick={clearVFiles}>
+                          清空
+                        </button>
+                      )}
+                    </div>
+                    {vfiles.length === 0 && (
+                      <div className="pet-chat-empty">
+                        暂无记录（文件会下载到本地，这里只记录元数据）
+                      </div>
+                    )}
+                    {vfiles.map((f) => (
+                      <div key={f.id} className="pet-file-item">
+                        <span>
+                          {f.kind === "image" ? "🖼️" : "🎬"} {f.name}
+                        </span>
+                        <button
+                          className="pet-lib-del"
+                          onClick={() => deleteVFile(f.id)}
+                          title="删除记录"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ---- 模块5：错题 & 资料收集 ---- */}
+              {sideTab === "lib" && (
+                <div className="pet-lib">
+                  <p className="pet-hint">
+                    在页面选中任意文字后点击桌宠，即可自动收藏到资料库。
+                  </p>
+                  {library.length === 0 && (
+                    <div className="pet-chat-empty">暂无收藏资料</div>
+                  )}
+                  {library.map((l) => (
+                    <div key={l.id} className="pet-lib-item">
+                      <div className="pet-lib-item-top">
+                        {renamingId === l.id ? (
+                          <input
+                            className="pet-lib-rename"
+                            value={renameVal}
+                            onChange={(e) => setRenameVal(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") commitRename(l.id);
+                              if (e.key === "Escape") setRenamingId(null);
+                            }}
+                            onBlur={() => commitRename(l.id)}
+                            autoFocus
+                          />
+                        ) : (
+                          <b onClick={() => toggleExpand(l.id)} title="点击查看全文">
+                            {l.title}
+                          </b>
+                        )}
+                        <div className="pet-lib-actions">
+                          <button
+                            className="pet-lib-del"
+                            onClick={() => startRename(l.id, l.title)}
+                            title="重命名"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            className="pet-lib-del"
+                            onClick={() => deleteLib(l.id)}
+                            title="删除"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                      <div className="pet-lib-time">
+                        {new Date(l.time).toLocaleString("zh-CN", {
+                          hour12: false,
+                        })}
+                      </div>
+                      {expandedId === l.id && (
+                        <div className="pet-lib-text">{l.text}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ---- 模块6：资料查询（搜索 + 智能解析）---- */}
+              {sideTab === "search" && (
+                <div className="pet-search">
+                  <div className="pet-search-row">
+                    <input
+                      className="pet-chat-input"
+                      value={searchKw}
+                      onChange={(e) => setSearchKw(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") simulateSearch(searchKw);
+                      }}
+                      placeholder="输入查询关键词…"
+                    />
+                    <button
+                      className="pet-chat-send"
+                      onClick={() => simulateSearch(searchKw)}
+                    >
+                      搜索
+                    </button>
+                  </div>
+                  {searchResults && (
+                    <>
+                      <div className="pet-search-results">
+                        {searchResults.map((r, i) => (
+                          <div key={i} className="pet-search-result">
+                            <a href={r.url} target="_blank" rel="noreferrer">
+                              {r.title}
+                            </a>
+                            <p>{r.snippet}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        className="pet-upload-btn"
+                        disabled={parsing}
+                        onClick={simulateParse}
+                      >
+                        {parsing ? "解析中…" : "🤖 智能解析总结"}
+                      </button>
+                      {searchSummary && (
+                        <div className="pet-search-summary">{searchSummary}</div>
+                      )}
+                    </>
+                  )}
+                  <p className="pet-hint-muted">
+                    当前为模拟搜索与模拟解析，预留了真实搜索 / 大模型接口位置。
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

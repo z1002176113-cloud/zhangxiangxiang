@@ -719,3 +719,482 @@ body {
 ::selection {
   background-color: rgba(99, 102, 241, 0.2);
 }
+
+/* ================= 新增：多功能悬浮侧边面板（对话 / 识图 / 备忘 / 录制 / 资料 / 查询）================= */
+
+/* 侧边面板（依附桌宠，由 JS 动态定位；覆盖 .pet-panel 默认的左侧定位） */
+.pet-side-panel {
+  right: auto;
+  bottom: auto;
+  width: 268px;
+  max-height: min(62vh, 420px);
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+}
+
+.pet-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.pet-side-head .pet-panel-title {
+  margin-bottom: 0;
+}
+
+.pet-side-close {
+  border: none;
+  background: none;
+  font-size: 16px;
+  color: #999;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.pet-side-close:hover {
+  background: #f2f2f2;
+  color: #333;
+}
+
+/* 选项卡 */
+.pet-side-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.pet-side-tab {
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  color: #666;
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pet-side-tab:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+}
+
+.pet-side-tab.active {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+/* 面板内容区（可滚动） */
+.pet-side-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+/* 通用提示文字 */
+.pet-hint {
+  color: #888;
+  font-size: 11px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.pet-hint-muted {
+  color: #bbb;
+  font-size: 10px;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+/* ---- 模块1：对话 ---- */
+.pet-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pet-chat-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px solid #f0f0f0;
+}
+
+.pet-chat-empty {
+  color: #bbb;
+  font-size: 11px;
+  text-align: center;
+  padding: 14px 0;
+  line-height: 1.6;
+}
+
+.pet-chat-msg {
+  max-width: 85%;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.pet-chat-msg.user {
+  align-self: flex-end;
+  background: #6366f1;
+  color: #fff;
+  border-bottom-right-radius: 3px;
+}
+
+.pet-chat-msg.bot {
+  align-self: flex-start;
+  background: #fff;
+  color: #333;
+  border: 1px solid #eee;
+  border-bottom-left-radius: 3px;
+}
+
+.pet-chat-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.pet-chat-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+}
+
+.pet-chat-input:focus {
+  border-color: #6366f1;
+}
+
+.pet-chat-mic {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.pet-chat-mic:hover:not(:disabled) {
+  border-color: #6366f1;
+}
+
+.pet-chat-mic:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pet-chat-send {
+  border: none;
+  background: #6366f1;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pet-chat-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- 模块2：识图投喂 ---- */
+.pet-food {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pet-upload-btn {
+  border: none;
+  background: #6366f1;
+  color: #fff;
+  border-radius: 10px;
+  padding: 9px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.pet-upload-btn:hover:not(:disabled) {
+  transform: scale(1.02);
+}
+
+.pet-upload-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- 模块3：备忘录 ---- */
+.pet-memo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pet-memo-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pet-memo-input {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+}
+
+.pet-memo-input:focus {
+  border-color: #6366f1;
+}
+
+.pet-memo-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.pet-memo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.pet-memo-item {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+
+.pet-memo-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.pet-memo-item-content {
+  color: #888;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.pet-memo-item-time {
+  color: #bbb;
+  font-size: 10px;
+  margin-top: 3px;
+}
+
+/* ---- 模块4：截图 / 录屏 ---- */
+.pet-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pet-capture-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.pet-capture-btns .pet-upload-btn {
+  flex: 1;
+}
+
+.pet-upload-btn.recording {
+  background: #ff6b6b;
+}
+
+.pet-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.pet-file-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #666;
+  font-weight: 600;
+}
+
+.pet-file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #555;
+  word-break: break-all;
+}
+
+/* ---- 模块5：资料库 ---- */
+.pet-lib {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pet-lib-item {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+
+.pet-lib-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.pet-lib-item-top b {
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-lib-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.pet-lib-del {
+  border: none;
+  background: none;
+  color: #bbb;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+.pet-lib-del:hover {
+  color: #ff6b6b;
+  background: #fff0f0;
+}
+
+.pet-lib-time {
+  color: #bbb;
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.pet-lib-text {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #555;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.pet-lib-rename {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #6366f1;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+  outline: none;
+}
+
+/* ---- 模块6：资料查询 ---- */
+.pet-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pet-search-row {
+  display: flex;
+  gap: 6px;
+}
+
+.pet-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pet-search-result {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+
+.pet-search-result a {
+  color: #6366f1;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.pet-search-result a:hover {
+  text-decoration: underline;
+}
+
+.pet-search-result p {
+  color: #888;
+  font-size: 11px;
+  line-height: 1.55;
+  margin-top: 2px;
+}
+
+.pet-search-summary {
+  background: #eef1ff;
+  border: 1px solid #d8defa;
+  color: #4a6cf7;
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
