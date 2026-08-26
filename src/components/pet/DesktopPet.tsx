@@ -54,8 +54,6 @@ const CALM_DURATION = 60 * 60 * 1000;
 const SCRATCH_LIMIT = 3;
 // 长按判定阈值（毫秒）
 const LONG_PRESS_MS = 600;
-// 挠痒滑动累计距离阈值（px）
-const SCRATCH_DISTANCE = 150;
 // 画圈手势完成所需角度（弧度，2π = 一圈）
 const CIRCLE_ANGLE = Math.PI * 2;
 
@@ -171,6 +169,8 @@ export function DesktopPet() {
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emojiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 待触发的冷静回调（投喂解除时需取消）
+  const pendingCalmRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---- 新增：手势识别状态（一次按压会话内的中间数据）----
   const gestureRef = useRef({
@@ -182,9 +182,6 @@ export function DesktopPet() {
     circleAngle: 0,
     lastAngle: 0,
     lastAngleInit: false,
-    // 挠痒
-    scratchAccum: 0,
-    lastScratchY: 0,
     // 长按 / 拖拽 / 手势完成标记
     longPressed: false,
     dragged: false,
@@ -365,6 +362,7 @@ export function DesktopPet() {
   // 进入冷静模式（挠痒累计达到 3 次触发）
   const enterCalm = () => {
     setCalmUntil(Date.now() + CALM_DURATION);
+    setCalmLeft(CALM_DURATION / 1000); // 立即显示剩余时间（interval 随后持续刷新）
     setScratchCount(0);
     setState("sad");
     showBubble("呜呜…被你挠得太多次了，我要冷静 1 小时 ❄️");
@@ -372,7 +370,7 @@ export function DesktopPet() {
     stateTimerRef.current = setTimeout(() => setState("idle"), 1500);
   };
 
-  // 身体区域挠痒一次：大笑 + 累计计数
+  // 点击肚子（挠痒）：大笑 + 累计计数，达到 3 次触发冷静
   const handleScratch = () => {
     setState("laughing");
     showBubble("哈哈哈…好痒！别挠啦！😆");
@@ -381,10 +379,14 @@ export function DesktopPet() {
     emojiTimerRef.current = setTimeout(() => setEmoji(null), 1500);
 
     // 累计挠痒次数，达到 SCRATCH_LIMIT 触发冷静
+    // 延迟 1.2s 触发（先播完大笑动画）；投喂解除时通过 pendingCalmRef 取消
     setScratchCount((prev) => {
       const next = prev + 1;
-      if (next >= SCRATCH_LIMIT) {
-        setTimeout(() => enterCalm(), 1200);
+      if (next >= SCRATCH_LIMIT && !pendingCalmRef.current) {
+        pendingCalmRef.current = setTimeout(() => {
+          pendingCalmRef.current = null;
+          enterCalm();
+        }, 1200);
       }
       return next;
     });
@@ -446,6 +448,11 @@ export function DesktopPet() {
       showBubble("背包里没有这个道具啦~");
       return;
     }
+    // 若冷静尚未触发（延迟中），先取消，避免投喂后被冷静覆盖
+    if (pendingCalmRef.current) {
+      clearTimeout(pendingCalmRef.current);
+      pendingCalmRef.current = null;
+    }
     const name = ITEMS.find((i) => i.key === type)?.name ?? "道具";
     setItems((prev) => ({ ...prev, [type]: prev[type] - 1 }));
     setCalmUntil(null);
@@ -474,6 +481,8 @@ export function DesktopPet() {
     // 冷静模式下禁用全部交互（投喂面板按钮已单独处理，不经过此处）
     if (calmUntil && calmUntil > Date.now()) {
       showBubble(`我在冷静中…剩余 ${formatCalm(calmUntil - Date.now())}`);
+      // 重置手势状态，避免 pointerup 用残留数据误触发交互
+      gestureRef.current.zone = "none";
       return;
     }
 
@@ -489,8 +498,6 @@ export function DesktopPet() {
     g.downTime = performance.now();
     g.circleAngle = 0;
     g.lastAngleInit = false;
-    g.scratchAccum = 0;
-    g.lastScratchY = e.clientY;
     g.longPressed = false;
     g.dragged = false;
     g.gestureDone = false;
@@ -522,25 +529,6 @@ export function DesktopPet() {
     const rect = petRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    // 身体区域：上下滑动挠痒（垂直主导），横向主导则视为拖拽
-    if (g.zone === "body") {
-      const dx = Math.abs(e.clientX - g.downX);
-      const dy = e.clientY - g.lastScratchY;
-      if (Math.abs(dy) > 3) {
-        g.scratchAccum += Math.abs(dy);
-        g.lastScratchY = e.clientY;
-      }
-      // 垂直累计距离达到阈值 → 完成一次挠痒
-      if (g.scratchAccum > SCRATCH_DISTANCE && dx * 2 < g.scratchAccum) {
-        g.gestureDone = true;
-        handleScratch();
-        return;
-      }
-      // 横向主导：按原拖拽逻辑移动
-      if (dx > 5) movePet(e);
-      return;
-    }
-
     // 头顶区域：画圈手势识别（计算绕中心的角度累计）
     if (g.zone === "halo") {
       const cx = rect.width / 2;
@@ -565,15 +553,19 @@ export function DesktopPet() {
       return;
     }
 
-    // 头部区域：按原拖拽逻辑移动
-    if (g.zone === "head") {
-      movePet(e);
-    }
+    // 头部/身体区域：按原拖拽逻辑移动（点击在松开时区分）
+    movePet(e);
   };
 
   // 指针松开：判定 长按落地 / 手势完成 / 点击 / 普通拖拽结束
   const handlePointerUp = (e: React.PointerEvent) => {
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    // 冷静模式下禁止一切交互（与 handlePointerDown 保持一致）
+    if (calmUntil && calmUntil > Date.now()) {
+      gestureRef.current.zone = "none";
+      dragRef.current.isDragging = false;
+      return;
+    }
     const g = gestureRef.current;
     const moved =
       Math.abs(e.clientX - g.downX) + Math.abs(e.clientY - g.downY);
@@ -613,6 +605,9 @@ export function DesktopPet() {
         emojiTimerRef.current = setTimeout(() => setEmoji(null), 1500);
         if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
         stateTimerRef.current = setTimeout(() => setState("idle"), 1200);
+      } else if (g.zone === "body") {
+        // 点击肚子 → 大笑（挠痒计数，累计 3 次进入冷静）
+        handleScratch();
       } else {
         // 其他区域点击 → 原随机交互
         handleClick();
@@ -652,6 +647,7 @@ export function DesktopPet() {
       if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
       if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (pendingCalmRef.current) clearTimeout(pendingCalmRef.current);
     };
   }, []);
 
