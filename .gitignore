@@ -33,3 +33,7 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# local project dirs (not part of the site)
+/product
+/story-to-handdrawn-video
