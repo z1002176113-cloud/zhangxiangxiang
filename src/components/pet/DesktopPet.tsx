@@ -2,8 +2,31 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// 桌宠状态
-type PetState = "idle" | "walking" | "reacting" | "dragging";
+// ========== 类型与常量 ==========
+
+// 桌宠动画状态（在原有基础上扩展）
+type PetState =
+  | "idle"
+  | "walking"
+  | "reacting"
+  | "dragging"
+  | "angry" // 捂脑袋委屈生气
+  | "laughing" // 挠痒大笑
+  | "spinning" // 转圈欢快
+  | "confused" // 疑惑
+  | "scared" // 害怕
+  | "relieved" // 长舒一口气
+  | "happy" // 猜拳赢/投喂开心
+  | "sad"; // 猜拳输/进入冷静
+
+// 交互区域
+type Zone = "halo" | "head" | "body";
+
+// 猜拳手势
+type RPSChoice = "rock" | "paper" | "scissors";
+
+// 道具类型
+type ItemType = "fish" | "heart" | "candy";
 
 // 随机气泡文字
 const BUBBLE_MESSAGES = [
@@ -22,12 +45,88 @@ const BUBBLE_MESSAGES = [
 // 随机表情符号
 const EMOJIS = ["✨", "💕", "😄", "🌟", "💖", "😋", "🎀", "🌸", "💫", "☺️"];
 
+// localStorage 存储键
+const STORAGE_KEY = "my-baby-pet-state";
+
+// 冷静持续时长（1 小时）
+const CALM_DURATION = 60 * 60 * 1000;
+// 挠痒累计次数达到该值触发冷静
+const SCRATCH_LIMIT = 3;
+// 长按判定阈值（毫秒）
+const LONG_PRESS_MS = 600;
+// 挠痒滑动累计距离阈值（px）
+const SCRATCH_DISTANCE = 150;
+// 画圈手势完成所需角度（弧度，2π = 一圈）
+const CIRCLE_ANGLE = Math.PI * 2;
+
+// 桌宠渲染尺寸（px）
+const PET_SIZE = 80;
+const MARGIN = 16;
+
+// 交互区域高度比例（相对于容器高度）
+const ZONE_HALO_END = 0.22; // 头顶区：0 - 22%
+const ZONE_HEAD_END = 0.5; // 头部区：22% - 50%
+
+// 道具配置
+const ITEMS: { key: ItemType; name: string; emoji: string; desc: string }[] = [
+  { key: "fish", name: "小鱼干", emoji: "🐟", desc: "投喂后解除冷静" },
+  { key: "heart", name: "爱心", emoji: "💖", desc: "投喂后解除冷静" },
+  { key: "candy", name: "糖果", emoji: "🍬", desc: "投喂后解除冷静" },
+];
+
+// 猜拳选项
+const RPS_OPTIONS: { key: RPSChoice; label: string; emoji: string }[] = [
+  { key: "rock", label: "石头", emoji: "🪨" },
+  { key: "scissors", label: "剪刀", emoji: "✂️" },
+  { key: "paper", label: "布", emoji: "📄" },
+];
+const RPS_LABEL: Record<RPSChoice, string> = {
+  rock: "石头",
+  scissors: "剪刀",
+  paper: "布",
+};
+
 interface Position {
   x: number;
   y: number;
 }
 
+// 持久化数据结构
+interface PersistedState {
+  calmUntil: number | null; // 冷静截止时间戳
+  scratchCount: number; // 挠痒累计次数
+  items: Record<ItemType, number>; // 道具背包数量
+}
+
+const DEFAULT_PERSISTED: PersistedState = {
+  calmUntil: null,
+  scratchCount: 0,
+  items: { fish: 1, heart: 0, candy: 0 },
+};
+
+// 从 localStorage 读取持久化状态
+function loadPersisted(): PersistedState {
+  if (typeof window === "undefined") return DEFAULT_PERSISTED;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_PERSISTED;
+    const parsed = JSON.parse(raw);
+    const s: PersistedState = {
+      calmUntil: typeof parsed.calmUntil === "number" ? parsed.calmUntil : null,
+      scratchCount:
+        typeof parsed.scratchCount === "number" ? parsed.scratchCount : 0,
+      items: { ...DEFAULT_PERSISTED.items, ...(parsed.items || {}) },
+    };
+    // 已过期的冷静状态视为未冷静
+    if (s.calmUntil && s.calmUntil <= Date.now()) s.calmUntil = null;
+    return s;
+  } catch {
+    return DEFAULT_PERSISTED;
+  }
+}
+
 export function DesktopPet() {
+  // ---- 原有状态：位置 / 动画 / 朝向 / 气泡 / 表情 / 关闭按钮 ----
   const [position, setPosition] = useState<Position>({ x: -1, y: -1 });
   const [state, setState] = useState<PetState>("idle");
   const [facing, setFacing] = useState<"left" | "right">("right");
@@ -35,6 +134,24 @@ export function DesktopPet() {
   const [emoji, setEmoji] = useState<string | null>(null);
   const [showClose, setShowClose] = useState(false);
 
+  // ---- 新增：持久化状态（localStorage）----
+  const [calmUntil, setCalmUntil] = useState<number | null>(null); // 冷静截止时间
+  const [scratchCount, setScratchCount] = useState(0); // 挠痒累计次数
+  const [items, setItems] = useState<Record<ItemType, number>>(
+    DEFAULT_PERSISTED.items
+  );
+
+  // ---- 新增：UI 面板状态 ----
+  const [showGame, setShowGame] = useState(false); // 猜拳面板
+  const [showShop, setShowShop] = useState(false); // 商城面板
+  const [gameResult, setGameResult] = useState<{
+    player: RPSChoice;
+    comp: RPSChoice;
+    result: "win" | "lose" | "draw";
+  } | null>(null);
+  const [calmLeft, setCalmLeft] = useState(0); // 冷静剩余秒数
+
+  // ---- 原有 refs ----
   const petRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     isDragging: boolean;
@@ -53,11 +170,28 @@ export function DesktopPet() {
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emojiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const PET_SIZE = 80;
-  const MARGIN = 16;
+  // ---- 新增：手势识别状态（一次按压会话内的中间数据）----
+  const gestureRef = useRef({
+    zone: "none" as Zone | "none",
+    downX: 0,
+    downY: 0,
+    downTime: 0,
+    // 画圈
+    circleAngle: 0,
+    lastAngle: 0,
+    lastAngleInit: false,
+    // 挠痒
+    scratchAccum: 0,
+    lastScratchY: 0,
+    // 长按 / 拖拽 / 手势完成标记
+    longPressed: false,
+    dragged: false,
+    gestureDone: false,
+  });
 
-  // 初始化位置（右下角）
+  // ---- 初始化位置（右下角）----
   useEffect(() => {
     setPosition({
       x: window.innerWidth - PET_SIZE - MARGIN,
@@ -65,7 +199,37 @@ export function DesktopPet() {
     });
   }, []);
 
-  // 边界约束
+  // ---- 新增：挂载时从 localStorage 加载持久化状态 ----
+  useEffect(() => {
+    const s = loadPersisted();
+    setCalmUntil(s.calmUntil);
+    setScratchCount(s.scratchCount);
+    setItems(s.items);
+  }, []);
+
+  // ---- 新增：持久化状态变化时写入 localStorage ----
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ calmUntil, scratchCount, items })
+    );
+  }, [calmUntil, scratchCount, items]);
+
+  // ---- 新增：每秒检查冷静是否到期 / 更新剩余秒数 ----
+  useEffect(() => {
+    const tick = () => {
+      setCalmUntil((prev) => (prev && prev <= Date.now() ? null : prev));
+      setCalmLeft((prev) => {
+        if (!calmUntil) return 0;
+        const left = Math.max(0, Math.ceil((calmUntil - Date.now()) / 1000));
+        return left === prev ? prev : left;
+      });
+    };
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [calmUntil]);
+
+  // ---- 边界约束 ----
   const clampPosition = useCallback((x: number, y: number): Position => {
     const maxX = window.innerWidth - PET_SIZE;
     const maxY = window.innerHeight - PET_SIZE;
@@ -75,7 +239,7 @@ export function DesktopPet() {
     };
   }, []);
 
-  // 自动游走逻辑
+  // ---- 自动游走逻辑（原有，保留）----
   useEffect(() => {
     let lastTime = performance.now();
 
@@ -91,16 +255,13 @@ export function DesktopPet() {
 
       // 如果没有目标或到达目标，设置新的漫游目标
       if (!wanderRef.current.isWandering) {
-        // 随机选择一个新位置
         const maxX = window.innerWidth - PET_SIZE;
         const newX = MARGIN + Math.random() * (maxX - MARGIN);
-        // 随机速度 30-80 px/s
         wanderRef.current.targetX = newX;
         wanderRef.current.speed = 30 + Math.random() * 50;
         wanderRef.current.isWandering = true;
         setState("walking");
 
-        // 朝向右
         if (newX > position.x) setFacing("right");
         else setFacing("left");
       }
@@ -111,7 +272,6 @@ export function DesktopPet() {
         return;
       }
 
-      // 朝目标移动
       const targetX = wanderRef.current.targetX;
       const currentX = position.x;
       const diff = targetX - currentX;
@@ -119,16 +279,15 @@ export function DesktopPet() {
       const moveDistance = (wanderRef.current.speed * deltaTime) / 1000;
 
       if (distance <= moveDistance) {
-        // 到达目标
         wanderRef.current.isWandering = false;
         setState("idle");
-        // 暂停 2-5 秒
         wanderRef.current.pauseUntil =
           currentTime + 2000 + Math.random() * 3000;
 
-        // 偶尔弹出气泡
         if (Math.random() < 0.3) {
-          showBubble(BUBBLE_MESSAGES[Math.floor(Math.random() * BUBBLE_MESSAGES.length)]);
+          showBubble(
+            BUBBLE_MESSAGES[Math.floor(Math.random() * BUBBLE_MESSAGES.length)]
+          );
         }
       } else {
         const newX = currentX + (diff > 0 ? moveDistance : -moveDistance);
@@ -142,95 +301,342 @@ export function DesktopPet() {
     return () => cancelAnimationFrame(animFrameRef.current);
   }, [position.x, clampPosition]);
 
-  // 拖拽开始
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault();
-      const rect = petRef.current?.getBoundingClientRect();
-      if (!rect) return;
+  // ========== 基础工具函数 ==========
 
-      dragRef.current.isDragging = true;
-      dragRef.current.startX = e.clientX;
-      dragRef.current.startY = e.clientY;
-      dragRef.current.offsetX = e.clientX - rect.left;
-      dragRef.current.offsetY = e.clientY - rect.top;
-      setState("dragging");
-      setShowClose(true);
+  // 根据按压点的纵向偏移判断交互区域
+  const getZone = (offsetY: number): Zone => {
+    const ratio = offsetY / PET_SIZE;
+    if (ratio < ZONE_HALO_END) return "halo";
+    if (ratio < ZONE_HEAD_END) return "head";
+    return "body";
+  };
 
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    },
-    []
-  );
-
-  // 拖拽移动
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!dragRef.current.isDragging) return;
-      const newX = e.clientX - dragRef.current.offsetX;
-      const newY = e.clientY - dragRef.current.offsetY;
-      setPosition(clampPosition(newX, newY));
-    },
-    [clampPosition]
-  );
-
-  // 显示气泡
+  // 显示气泡（原逻辑保留）
   const showBubble = (msg: string) => {
     setBubble(msg);
     if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
     bubbleTimerRef.current = setTimeout(() => setBubble(null), 2500);
   };
 
-  // 点击交互
+  // 播放顺序动画序列（用于三段落地动画）
+  const playSequence = (seq: { s: PetState; ms: number }[]) => {
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    let acc = 0;
+    seq.forEach((step) => {
+      setTimeout(() => setState(step.s), acc);
+      acc += step.ms;
+    });
+    stateTimerRef.current = setTimeout(() => setState("idle"), acc);
+  };
+
+  // 重置漫游（原逻辑，可指定暂停时长，用于长动画场景）
+  const resetWander = (pauseMs = 1000) => {
+    wanderRef.current.isWandering = false;
+    wanderRef.current.pauseUntil = performance.now() + pauseMs;
+  };
+
+  // 格式化冷静剩余时间 mm:ss
+  const formatCalm = (ms: number) => {
+    const sec = Math.max(0, Math.ceil(ms / 1000));
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  // ========== 交互行为 ==========
+
+  // 点击交互（原逻辑保留：随机气泡 + 表情 + 弹跳）
   const handleClick = useCallback(() => {
     setState("reacting");
 
-    // 显示气泡
-    const msg = BUBBLE_MESSAGES[Math.floor(Math.random() * BUBBLE_MESSAGES.length)];
+    const msg =
+      BUBBLE_MESSAGES[Math.floor(Math.random() * BUBBLE_MESSAGES.length)];
     showBubble(msg);
 
-    // 显示表情
     const em = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
     setEmoji(em);
     if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
     emojiTimerRef.current = setTimeout(() => setEmoji(null), 1500);
 
-    // 1 秒后恢复 idle
     if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
     stateTimerRef.current = setTimeout(() => setState("idle"), 1000);
   }, []);
 
-  // 拖拽结束
-  const handlePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      const wasDragging = dragRef.current.isDragging;
-      const movedDistance =
-        Math.abs(e.clientX - dragRef.current.startX) +
-        Math.abs(e.clientY - dragRef.current.startY);
+  // 进入冷静模式（挠痒累计达到 3 次触发）
+  const enterCalm = () => {
+    setCalmUntil(Date.now() + CALM_DURATION);
+    setScratchCount(0);
+    setState("sad");
+    showBubble("呜呜…被你挠得太多次了，我要冷静 1 小时 ❄️");
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    stateTimerRef.current = setTimeout(() => setState("idle"), 1500);
+  };
 
+  // 身体区域挠痒一次：大笑 + 累计计数
+  const handleScratch = () => {
+    setState("laughing");
+    showBubble("哈哈哈…好痒！别挠啦！😆");
+    setEmoji("😂");
+    if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
+    emojiTimerRef.current = setTimeout(() => setEmoji(null), 1500);
+
+    // 累计挠痒次数，达到 SCRATCH_LIMIT 触发冷静
+    setScratchCount((prev) => {
+      const next = prev + 1;
+      if (next >= SCRATCH_LIMIT) {
+        setTimeout(() => enterCalm(), 1200);
+      }
+      return next;
+    });
+
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    stateTimerRef.current = setTimeout(() => setState("idle"), 1200);
+  };
+
+  // 头顶画圈：欢快转圈
+  const handleSpin = () => {
+    setState("spinning");
+    showBubble("哇！转圈圈好开心！🎉");
+    setEmoji("🎉");
+    if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
+    emojiTimerRef.current = setTimeout(() => setEmoji(null), 1800);
+
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    stateTimerRef.current = setTimeout(() => setState("idle"), 1600);
+  };
+
+  // 猜拳对局
+  const handleRPS = (choice: RPSChoice) => {
+    const comp = RPS_OPTIONS[Math.floor(Math.random() * 3)].key;
+    let result: "win" | "lose" | "draw";
+    if (choice === comp) result = "draw";
+    else if (
+      (choice === "rock" && comp === "scissors") ||
+      (choice === "scissors" && comp === "paper") ||
+      (choice === "paper" && comp === "rock")
+    )
+      result = "win";
+    else result = "lose";
+    setGameResult({ player: choice, comp, result });
+
+    if (result === "win") {
+      setState("happy");
+      showBubble("耶！我赢啦！🎉");
+    } else if (result === "lose") {
+      setState("sad");
+      showBubble("呜呜…我输了 😢");
+    } else {
+      showBubble("平局！再来一局？🤝");
+    }
+
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    stateTimerRef.current = setTimeout(() => setState("idle"), 1500);
+  };
+
+  // 商城：领取道具
+  const addItem = (type: ItemType) => {
+    setItems((prev) => ({ ...prev, [type]: prev[type] + 1 }));
+    const name = ITEMS.find((i) => i.key === type)?.name ?? "道具";
+    showBubble(`获得 ${name}！`);
+  };
+
+  // 商城/背包：投喂道具（冷静时解除冷静）
+  const feedItem = (type: ItemType) => {
+    if (items[type] <= 0) {
+      showBubble("背包里没有这个道具啦~");
+      return;
+    }
+    const name = ITEMS.find((i) => i.key === type)?.name ?? "道具";
+    setItems((prev) => ({ ...prev, [type]: prev[type] - 1 }));
+    setCalmUntil(null);
+    setState("happy");
+    showBubble(`谢谢你投喂 ${name}！我不冷静啦！💖`);
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    stateTimerRef.current = setTimeout(() => setState("idle"), 1500);
+  };
+
+  // ========== 指针交互（拖拽 + 手势识别）==========
+
+  // 拖拽移动宠物（原逻辑）
+  const movePet = (e: React.PointerEvent) => {
+    if (!dragRef.current.isDragging) {
+      dragRef.current.isDragging = true;
+      setState("dragging");
+    }
+    gestureRef.current.dragged = true;
+    const newX = e.clientX - dragRef.current.offsetX;
+    const newY = e.clientY - dragRef.current.offsetY;
+    setPosition(clampPosition(newX, newY));
+  };
+
+  // 按压开始：记录区域 / 启动长按计时
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // 冷静模式下禁用全部交互（投喂面板按钮已单独处理，不经过此处）
+    if (calmUntil && calmUntil > Date.now()) {
+      showBubble(`我在冷静中…剩余 ${formatCalm(calmUntil - Date.now())}`);
+      return;
+    }
+
+    e.preventDefault();
+    const rect = petRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const g = gestureRef.current;
+    const offsetY = e.clientY - rect.top;
+    g.zone = getZone(offsetY);
+    g.downX = e.clientX;
+    g.downY = e.clientY;
+    g.downTime = performance.now();
+    g.circleAngle = 0;
+    g.lastAngleInit = false;
+    g.scratchAccum = 0;
+    g.lastScratchY = e.clientY;
+    g.longPressed = false;
+    g.dragged = false;
+    g.gestureDone = false;
+
+    // 记录拖拽偏移（原逻辑）
+    dragRef.current.offsetX = e.clientX - rect.left;
+    dragRef.current.offsetY = e.clientY - rect.top;
+
+    // 按压期间暂停漫游（原逻辑：按下即暂停，避免行走动画覆盖交互状态）
+    dragRef.current.isDragging = true;
+
+    setShowClose(true);
+
+    // 长按计时：按住超过 LONG_PRESS_MS 标记为长按
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      gestureRef.current.longPressed = true;
+    }, LONG_PRESS_MS);
+
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  // 指针移动：区分 挠痒 / 画圈 / 拖拽
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const g = gestureRef.current;
+    if (g.zone === "none") return;
+    if (calmUntil && calmUntil > Date.now()) return;
+
+    const rect = petRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    // 身体区域：上下滑动挠痒（垂直主导），横向主导则视为拖拽
+    if (g.zone === "body") {
+      const dx = Math.abs(e.clientX - g.downX);
+      const dy = e.clientY - g.lastScratchY;
+      if (Math.abs(dy) > 3) {
+        g.scratchAccum += Math.abs(dy);
+        g.lastScratchY = e.clientY;
+      }
+      // 垂直累计距离达到阈值 → 完成一次挠痒
+      if (g.scratchAccum > SCRATCH_DISTANCE && dx * 2 < g.scratchAccum) {
+        g.gestureDone = true;
+        handleScratch();
+        return;
+      }
+      // 横向主导：按原拖拽逻辑移动
+      if (dx > 5) movePet(e);
+      return;
+    }
+
+    // 头顶区域：画圈手势识别（计算绕中心的角度累计）
+    if (g.zone === "halo") {
+      const cx = rect.width / 2;
+      const cy = (rect.height * ZONE_HALO_END) / 2;
+      const angle = Math.atan2(
+        e.clientY - rect.top - cy,
+        e.clientX - rect.left - cx
+      );
+      if (!g.lastAngleInit) {
+        g.lastAngle = angle;
+        g.lastAngleInit = true;
+      }
+      let diff = angle - g.lastAngle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      g.circleAngle += Math.abs(diff);
+      g.lastAngle = angle;
+      if (g.circleAngle >= CIRCLE_ANGLE) {
+        g.gestureDone = true;
+        handleSpin();
+      }
+      return;
+    }
+
+    // 头部区域：按原拖拽逻辑移动
+    if (g.zone === "head") {
+      movePet(e);
+    }
+  };
+
+  // 指针松开：判定 长按落地 / 手势完成 / 点击 / 普通拖拽结束
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    const g = gestureRef.current;
+    const moved =
+      Math.abs(e.clientX - g.downX) + Math.abs(e.clientY - g.downY);
+
+    // 长按拖动松开落地 → 疑惑 → 害怕 → 长舒一口气 三段动画
+    if (g.longPressed && g.dragged) {
       dragRef.current.isDragging = false;
+      setShowClose(false);
+      playSequence([
+        { s: "confused", ms: 1000 },
+        { s: "scared", ms: 1200 },
+        { s: "relieved", ms: 1200 },
+      ]);
+      showBubble("哎呀！吓死我了…呼~");
+      // 三段动画总时长 3.4s，暂停游走 4s 防止被行走动画打断
+      resetWander(4000);
+      return;
+    }
 
-      if (wasDragging && movedDistance < 5) {
-        // 点击（非拖拽）
+    // 手势已完成（挠痒 / 画圈）
+    if (g.gestureDone) {
+      dragRef.current.isDragging = false;
+      setShowClose(false);
+      resetWander();
+      return;
+    }
+
+    // 纯点击（几乎未移动）
+    if (moved < 5) {
+      dragRef.current.isDragging = false;
+      if (g.zone === "head") {
+        // 点击脑袋 → 捂脑袋委屈生气
+        setState("angry");
+        showBubble("呜呜~不许碰我的脑袋！😤");
+        setEmoji("😤");
+        if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
+        emojiTimerRef.current = setTimeout(() => setEmoji(null), 1500);
+        if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+        stateTimerRef.current = setTimeout(() => setState("idle"), 1200);
+      } else {
+        // 其他区域点击 → 原随机交互
         handleClick();
       }
-
-      setState("idle");
-      // 重新开始漫游
-      wanderRef.current.isWandering = false;
-      wanderRef.current.pauseUntil = performance.now() + 1000;
       setShowClose(false);
-    },
-    [handleClick]
-  );
+      resetWander();
+      return;
+    }
 
-  // 关闭桌宠
+    // 普通拖拽结束（原逻辑）
+    dragRef.current.isDragging = false;
+    setState("idle");
+    resetWander();
+    setShowClose(false);
+  };
+
+  // 关闭桌宠（原逻辑）
   const handleClose = useCallback(() => {
     if (petRef.current) {
       petRef.current.style.display = "none";
     }
   }, []);
 
-  // 窗口大小变化时重新约束位置
+  // 窗口大小变化时重新约束位置（原逻辑）
   useEffect(() => {
     const handleResize = () => {
       setPosition((prev) => clampPosition(prev.x, prev.y));
@@ -239,22 +645,39 @@ export function DesktopPet() {
     return () => window.removeEventListener("resize", handleResize);
   }, [clampPosition]);
 
-  // 清理定时器
+  // 清理定时器（原逻辑 + 长按计时器）
   useEffect(() => {
     return () => {
       if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
       if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
       if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     };
   }, []);
 
-  // 动画状态类名
+  // 动画状态类名映射
   const petAnimClass = {
     idle: "pet-idle",
     walking: "pet-walking",
     reacting: "pet-reacting",
     dragging: "",
+    angry: "pet-angry",
+    laughing: "pet-laughing",
+    spinning: "pet-spinning",
+    confused: "pet-confused",
+    scared: "pet-scared",
+    relieved: "pet-relieved",
+    happy: "pet-happy",
+    sad: "pet-sad",
   }[state];
+
+  // 猜拳结果文案
+  const resultText =
+    gameResult?.result === "win"
+      ? "我赢啦！🎉"
+      : gameResult?.result === "lose"
+        ? "我输啦…😢"
+        : "平局！🤝";
 
   return (
     <>
@@ -305,6 +728,116 @@ export function DesktopPet() {
           }}
           draggable={false}
         />
+
+        {/* ---- 新增：工具栏（猜拳 / 商城）---- */}
+        <div className="pet-toolbar">
+          <button
+            className="pet-tool-btn"
+            aria-label="猜拳小游戏"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              // 冷静时不能玩游戏
+              if (calmUntil && calmUntil > Date.now()) {
+                showBubble("我在冷静中，不玩游戏~");
+                return;
+              }
+              setShowGame((v) => !v);
+              setShowShop(false);
+            }}
+          >
+            ✊
+          </button>
+          <button
+            className="pet-tool-btn"
+            aria-label="道具商城"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowShop((v) => !v);
+              setShowGame(false);
+            }}
+          >
+            🛍️
+          </button>
+        </div>
+
+        {/* ---- 新增：冷静徽标（显示剩余时间，每秒刷新）---- */}
+        {calmUntil && calmUntil > Date.now() && (
+          <div className="pet-calm-badge">
+            ❄️ 冷静中 {formatCalm(calmLeft * 1000)}
+          </div>
+        )}
+
+        {/* ---- 新增：猜拳小游戏面板 ---- */}
+        {showGame && (
+          <div className="pet-panel" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="pet-panel-title">猜拳小游戏</div>
+            {gameResult && (
+              <div className="pet-rps-result">
+                你出 {RPS_LABEL[gameResult.player]} vs 我出{" "}
+                {RPS_LABEL[gameResult.comp]}
+                <br />
+                <b>{resultText}</b>
+              </div>
+            )}
+            <div className="pet-rps-btns">
+              {RPS_OPTIONS.map((o) => (
+                <button
+                  key={o.key}
+                  className="pet-rps-btn"
+                  onClick={() => handleRPS(o.key)}
+                  title={o.label}
+                >
+                  {o.emoji}
+                </button>
+              ))}
+            </div>
+            <button
+              className="pet-panel-close"
+              onClick={() => setShowGame(false)}
+            >
+              关闭
+            </button>
+          </div>
+        )}
+
+        {/* ---- 新增：模拟商城 + 道具背包面板 ---- */}
+        {showShop && (
+          <div className="pet-panel" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="pet-panel-title">道具商城 & 背包</div>
+            {ITEMS.map((item) => (
+              <div key={item.key} className="pet-item-row">
+                <span className="pet-item-info">
+                  {item.emoji} {item.name}{" "}
+                  <span className="pet-item-count">×{items[item.key]}</span>
+                  <span className="pet-item-desc">{item.desc}</span>
+                </span>
+                <span className="pet-item-actions">
+                  <button
+                    className="pet-item-btn secondary"
+                    onClick={() => addItem(item.key)}
+                  >
+                    领取
+                  </button>
+                  <button
+                    className="pet-item-btn"
+                    disabled={items[item.key] <= 0}
+                    onClick={() => feedItem(item.key)}
+                  >
+                    投喂
+                  </button>
+                </span>
+              </div>
+            ))}
+            <button
+              className="pet-panel-close"
+              onClick={() => setShowShop(false)}
+            >
+              关闭
+            </button>
+          </div>
+        )}
 
         {/* 气泡 */}
         {bubble && (

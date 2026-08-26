@@ -299,6 +299,303 @@ body {
   }
 }
 
+/* ---- 新增：肢体交互动画 ---- */
+
+/* 捂脑袋委屈生气：左右甩动 + 轻微缩小 */
+.pet-sprite.pet-angry {
+  animation: pet-angry-shake 0.6s ease-in-out infinite;
+}
+
+@keyframes pet-angry-shake {
+  0%, 100% {
+    transform: translateX(0) scale(1);
+  }
+  25% {
+    transform: translateX(-3px) scale(0.96) rotate(-4deg);
+  }
+  75% {
+    transform: translateX(3px) scale(0.96) rotate(4deg);
+  }
+}
+
+/* 挠痒大笑：上下弹跳抖动 */
+.pet-sprite.pet-laughing {
+  animation: pet-laugh 0.3s ease-in-out infinite;
+}
+
+@keyframes pet-laugh {
+  0%, 100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(3deg);
+  }
+}
+
+/* 欢快转圈：360° 旋转 */
+.pet-sprite.pet-spinning {
+  animation: pet-spin 0.8s linear 1;
+}
+
+@keyframes pet-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 疑惑：左右歪头 */
+.pet-sprite.pet-confused {
+  animation: pet-confused 0.8s ease-in-out infinite;
+}
+
+@keyframes pet-confused {
+  0%, 100% {
+    transform: rotate(-8deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
+
+/* 害怕：颤抖 + 缩小 */
+.pet-sprite.pet-scared {
+  animation: pet-scared 0.25s ease-in-out infinite;
+}
+
+@keyframes pet-scared {
+  0%, 100% {
+    transform: translateX(0) scale(0.92);
+  }
+  50% {
+    transform: translateX(-3px) scale(0.92);
+  }
+}
+
+/* 长舒一口气：放松缓摆 */
+.pet-sprite.pet-relieved {
+  animation: pet-relieved 1.2s ease-in-out 1;
+}
+
+@keyframes pet-relieved {
+  0% {
+    transform: scale(0.92) rotate(0deg);
+  }
+  40% {
+    transform: scale(1.06) translateY(-3px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 开心：跳跃 */
+.pet-sprite.pet-happy {
+  animation: pet-happy 0.6s ease-in-out infinite;
+}
+
+@keyframes pet-happy {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px) scale(1.05);
+  }
+}
+
+/* 伤心：垂头压扁 */
+.pet-sprite.pet-sad {
+  animation: pet-sad 1s ease-in-out 1 forwards;
+}
+
+@keyframes pet-sad {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scaleY(0.85) translateY(4px);
+  }
+}
+
+/* ---- 新增：桌宠工具栏 / 面板 / 徽标 UI ---- */
+
+/* 工具栏（猜拳 / 商城按钮，位于宠物右侧） */
+.pet-toolbar {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10001;
+}
+
+.pet-tool-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: white;
+  border: 1.5px solid #e5e5e5;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease;
+}
+
+.pet-tool-btn:hover {
+  transform: scale(1.12);
+}
+
+/* 冷静徽标（显示剩余时间，位于宠物左侧） */
+.pet-calm-badge {
+  position: absolute;
+  right: calc(100% + 6px);
+  top: 6px;
+  background: #eef1ff;
+  color: #4a6cf7;
+  border: 1px solid #d8defa;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  z-index: 10001;
+}
+
+/* 面板（猜拳 / 商城，位于宠物左侧） */
+.pet-panel {
+  position: absolute;
+  right: calc(100% + 6px);
+  bottom: 0;
+  width: 212px;
+  background: white;
+  border-radius: 14px;
+  border: 1.5px solid #eee;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  padding: 12px;
+  z-index: 10002;
+  font-size: 12px;
+  color: #333;
+}
+
+.pet-panel-title {
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+/* 猜拳 */
+.pet-rps-result {
+  text-align: center;
+  margin: 6px 0;
+  color: #555;
+  line-height: 1.6;
+}
+
+.pet-rps-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 8px 0;
+}
+
+.pet-rps-btn {
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  border-radius: 12px;
+  border: 1.5px solid #eee;
+  background: #fafafa;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.pet-rps-btn:hover {
+  transform: scale(1.1);
+  background: #fff;
+}
+
+/* 商城道具行 */
+.pet-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #f0f0f0;
+}
+
+.pet-item-row:last-child {
+  border-bottom: none;
+}
+
+.pet-item-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.5;
+}
+
+.pet-item-count {
+  color: #6366f1;
+  font-weight: 700;
+}
+
+.pet-item-desc {
+  color: #aaa;
+  font-size: 11px;
+}
+
+.pet-item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pet-item-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: #6366f1;
+  color: white;
+}
+
+.pet-item-btn.secondary {
+  background: #f0f0f0;
+  color: #555;
+}
+
+.pet-item-btn:disabled {
+  background: #ddd;
+  color: #aaa;
+  cursor: not-allowed;
+}
+
+/* 面板关闭按钮 */
+.pet-panel-close {
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px;
+  border-radius: 8px;
+  border: none;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+}
+
+.pet-panel-close:hover {
+  background: #ececec;
+}
+
 /* 气泡 */
 .pet-bubble {
   background: white;
