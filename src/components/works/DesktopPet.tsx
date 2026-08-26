@@ -18,10 +18,9 @@ const BUBBLES = [
 const EXPRESSIONS = ["😊", "😍", "🤔", "😴", "😎", "🥳", "😅", "🤗"];
 
 /**
- * 使用 canvas 去除图片的黑色背景（保留深色细节如眼睛）：
- * - 先计算每个像素的"邻域背景度"：周围 5x5 区域内暗像素占比
- * - 只有当像素本身暗 AND 周围大部分也暗 → 判定为背景（透明）
- * - 如果像素暗但周围有很多亮色像素 → 判定为物体细节（保留，如眼睛）
+ * 使用 canvas 去除图片的黑色背景 + 保留并加深眼瞳：
+ * 1. 邻域感知去除大面积黑色背景
+ * 2. 自动定位被亮色包围的小块暗区（眼瞳），强制涂黑
  */
 function removeBlackBackground(
   src: string,
@@ -73,23 +72,90 @@ function removeBlackBackground(
         }
       }
 
-      // 第二步：根据邻域暗度决定透明度
-      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-        const r = srcData[i];
-        const g = srcData[i + 1];
-        const b = srcData[i + 2];
-        const a = srcData[i + 3];
-        const brightness = (r + g + b) / 3;
-        const darkness = darknessMap[p];
+      // 第二步：根据邻域暗度决定透明度 + 标记眼瞳候选
+      // 眼瞳特征：本身暗 + 周围（3x3）大部分亮
+      const isPupil = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const p = y * w + x;
+          const i = p * 4;
+          const r = srcData[i];
+          const g = srcData[i + 1];
+          const b = srcData[i + 2];
+          const a = srcData[i + 3];
+          const brightness = (r + g + b) / 3;
+          const darkness = darknessMap[p];
 
-        if (brightness < threshold && darkness > 0.7) {
-          // 像素暗 + 周围大部分也暗 → 背景（透明）
-          data[i + 3] = 0;
-        } else if (brightness < threshold && darkness > 0.5) {
-          // 像素暗 + 周围一半暗 → 可能是背景边缘，半透明
-          data[i + 3] = a * 0.3;
+          if (brightness < threshold && darkness > 0.7) {
+            // 像素暗 + 周围大部分也暗 → 背景（透明）
+            data[i + 3] = 0;
+          } else if (brightness < threshold && darkness > 0.5) {
+            // 像素暗 + 周围一半暗 → 背景边缘，半透明
+            data[i + 3] = a * 0.3;
+          } else if (brightness < 80 && a > 200) {
+            // 暗像素 + 周围亮 → 可能是眼瞳候选，3x3 验证
+            let brightNeighbors = 0;
+            let nbCount = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+                nbCount++;
+                const nIdx = (ny * w + nx) * 4;
+                const nr = srcData[nIdx];
+                const ng = srcData[nIdx + 1];
+                const nb2 = srcData[nIdx + 2];
+                const nBright = (nr + ng + nb2) / 3;
+                if (nBright > 120) brightNeighbors++;
+              }
+            }
+            if (nbCount > 0 && brightNeighbors / nbCount > 0.6) {
+              isPupil[p] = 1;
+            }
+          }
         }
-        // 否则保留原样（包括暗像素但周围亮的情况 → 保留眼睛等深色细节）
+      }
+
+      // 第三步：对眼瞳候选区域进行连通域扩展，整块涂黑
+      const visited = new Uint8Array(w * h);
+      for (let p = 0; p < isPupil.length; p++) {
+        if (isPupil[p] && !visited[p]) {
+          // BFS 收集连通的眼瞳区域
+          const queue = [p];
+          const region: number[] = [];
+          visited[p] = 1;
+          while (queue.length > 0) {
+            const cur = queue.shift()!;
+            region.push(cur);
+            const cx = cur % w;
+            const cy = Math.floor(cur / w);
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = cx + dx;
+                const ny = cy + dy;
+                if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+                const np = ny * w + nx;
+                if (!visited[np] && isPupil[np]) {
+                  visited[np] = 1;
+                  queue.push(np);
+                }
+              }
+            }
+          }
+          // 如果区域大小合理（1~500 像素），全部强制涂黑
+          if (region.length >= 2 && region.length <= 500) {
+            for (const rp of region) {
+              const ri = rp * 4;
+              data[ri] = 0;       // R
+              data[ri + 1] = 0;   // G
+              data[ri + 2] = 0;   // B
+              data[ri + 3] = 255; // A 全不透明
+            }
+          }
+        }
       }
 
       ctx.putImageData(imageData, 0, 0);
