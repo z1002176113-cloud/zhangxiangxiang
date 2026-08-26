@@ -491,6 +491,15 @@ body {
   margin-bottom: 8px;
 }
 
+/* 猜拳弹窗：固定在桌宠正下方、水平居中（覆盖面板默认的左侧定位） */
+.pet-panel-below {
+  right: auto;
+  bottom: auto;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 /* 猜拳 */
 .pet-rps-result {
   text-align: center;

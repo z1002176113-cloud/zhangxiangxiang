@@ -84,6 +84,14 @@ const RPS_LABEL: Record<RPSChoice, string> = {
   paper: "布",
 };
 
+// 猜拳胜负规则表：用户手势 → 能被它克制（赢过）的桌宠手势
+// 石头赢剪刀；剪刀赢布；布赢石头
+const RPS_BEATS: Record<RPSChoice, RPSChoice> = {
+  rock: "scissors",
+  scissors: "paper",
+  paper: "rock",
+};
+
 interface Position {
   x: number;
   y: number;
@@ -148,6 +156,12 @@ export function DesktopPet() {
     result: "win" | "lose" | "draw";
   } | null>(null);
   const [calmLeft, setCalmLeft] = useState(0); // 冷静剩余秒数
+
+  // ---- 新增：猜拳弹窗定位 ----
+  const [smoothShift, setSmoothShift] = useState(false); // 桌宠平滑上移/回位过渡标记
+  const rpsPanelRef = useRef<HTMLDivElement>(null); // 猜拳面板（用于测量弹窗尺寸）
+  const rpsOriginRef = useRef<Position | null>(null); // 打开猜拳弹窗时桌宠的原始坐标
+  const shiftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 过渡结束恢复计时器
 
   // ---- 原有 refs ----
   const petRef = useRef<HTMLDivElement>(null);
@@ -407,27 +421,33 @@ export function DesktopPet() {
     stateTimerRef.current = setTimeout(() => setState("idle"), 1600);
   };
 
-  // 猜拳对局
+  // 猜拳对局（胜负判断已按规则完全重写，保证准确）
   const handleRPS = (choice: RPSChoice) => {
     const comp = RPS_OPTIONS[Math.floor(Math.random() * 3)].key;
+    // 胜负判断：
+    // 1) 手势相同 → 平局
+    // 2) 用户手势克制桌宠手势（RPS_BEATS[choice] === comp）→ 用户赢
+    // 3) 其余 → 用户输
     let result: "win" | "lose" | "draw";
-    if (choice === comp) result = "draw";
-    else if (
-      (choice === "rock" && comp === "scissors") ||
-      (choice === "scissors" && comp === "paper") ||
-      (choice === "paper" && comp === "rock")
-    )
+    if (choice === comp) {
+      result = "draw";
+    } else if (RPS_BEATS[choice] === comp) {
       result = "win";
-    else result = "lose";
+    } else {
+      result = "lose";
+    }
     setGameResult({ player: choice, comp, result });
 
     if (result === "win") {
+      // 用户赢 → 桌宠开心动画 + 开心气泡
       setState("happy");
-      showBubble("耶！我赢啦！🎉");
+      showBubble("耶！你赢啦！太棒了！🎉");
     } else if (result === "lose") {
+      // 用户输 → 桌宠伤心动画 + 伤心气泡
       setState("sad");
-      showBubble("呜呜…我输了 😢");
+      showBubble("呜呜…你输啦，别难过呀 😢");
     } else {
+      // 平局 → 平局气泡
       showBubble("平局！再来一局？🤝");
     }
 
@@ -471,6 +491,8 @@ export function DesktopPet() {
       setState("dragging");
     }
     gestureRef.current.dragged = true;
+    // 用户手动拖拽后，关闭猜拳弹窗不再自动回到打开前的位置
+    rpsOriginRef.current = null;
     const newX = e.clientX - dragRef.current.offsetX;
     const newY = e.clientY - dragRef.current.offsetY;
     setPosition(clampPosition(newX, newY));
@@ -640,7 +662,7 @@ export function DesktopPet() {
     return () => window.removeEventListener("resize", handleResize);
   }, [clampPosition]);
 
-  // 清理定时器（原逻辑 + 长按计时器）
+  // 清理定时器（原逻辑 + 长按计时器 + 过渡计时器）
   useEffect(() => {
     return () => {
       if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
@@ -648,8 +670,68 @@ export function DesktopPet() {
       if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
       if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
       if (pendingCalmRef.current) clearTimeout(pendingCalmRef.current);
+      if (shiftTimerRef.current) clearTimeout(shiftTimerRef.current);
     };
   }, []);
+
+  // ---- 新增：猜拳弹窗定位逻辑（弹窗只显示在桌宠正下方）----
+
+  // 打开猜拳弹窗：默认放在桌宠正下方、水平居中；若下方空间不足，
+  // 不移动弹窗，而是把桌宠整体向上偏移腾出空间（带平滑过渡），
+  // 且保证桌宠不跑出屏幕顶部。
+  useEffect(() => {
+    if (!showGame) return;
+    // 记录桌宠原始坐标（关闭弹窗后恢复）
+    rpsOriginRef.current = { x: position.x, y: position.y };
+    // 打开弹窗期间暂停自动漫游，保证弹窗跟随的桌宠位置稳定、关闭后能精确回位
+    wanderRef.current.isWandering = false;
+    wanderRef.current.pauseUntil = performance.now() + 3600 * 1000;
+    setState("idle");
+    // 等一帧，确保面板渲染完成、能测量到弹窗自身宽高
+    const raf = requestAnimationFrame(() => {
+      const petEl = petRef.current;
+      const panelEl = rpsPanelRef.current;
+      if (!petEl) return;
+      const rect = petEl.getBoundingClientRect();
+      const panelH = panelEl ? panelEl.getBoundingClientRect().height : 150;
+      const GAP = 8; // 弹窗与桌宠底边的间距
+      const panelBottom = rect.bottom + GAP + panelH;
+      if (panelBottom > window.innerHeight) {
+        const shift = panelBottom - window.innerHeight + 8; // 需要上移的量（含余量）
+        // 上限保护：桌宠不能跑出浏览器屏幕顶部
+        const newY = Math.max(0, rect.top - shift);
+        if (Math.abs(newY - rect.top) > 1) {
+          setSmoothShift(true);
+          setPosition((prev) => ({ x: prev.x, y: newY }));
+          if (shiftTimerRef.current) clearTimeout(shiftTimerRef.current);
+          shiftTimerRef.current = setTimeout(() => setSmoothShift(false), 400);
+        }
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showGame]);
+
+  // 关闭猜拳弹窗：桌宠平滑回到打开前的位置，并恢复自动漫游
+  useEffect(() => {
+    if (showGame) return;
+    const origin = rpsOriginRef.current;
+    if (origin) {
+      rpsOriginRef.current = null;
+      setPosition((prev) => {
+        const same =
+          Math.abs(prev.x - origin.x) < 1 && Math.abs(prev.y - origin.y) < 1;
+        return same ? prev : origin;
+      });
+      setSmoothShift(true);
+      if (shiftTimerRef.current) clearTimeout(shiftTimerRef.current);
+      shiftTimerRef.current = setTimeout(() => setSmoothShift(false), 400);
+      // 恢复自动漫游（延迟 600ms，等回位过渡播完再开始游走）
+      wanderRef.current.isWandering = false;
+      wanderRef.current.pauseUntil = performance.now() + 600;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showGame]);
 
   // 动画状态类名映射
   const petAnimClass = {
@@ -667,12 +749,12 @@ export function DesktopPet() {
     sad: "pet-sad",
   }[state];
 
-  // 猜拳结果文案
+  // 猜拳结果文案（以玩家视角展示：你 vs 桌宠）
   const resultText =
     gameResult?.result === "win"
-      ? "我赢啦！🎉"
+      ? "你赢啦！🎉"
       : gameResult?.result === "lose"
-        ? "我输啦…😢"
+        ? "你输啦…😢"
         : "平局！🤝";
 
   return (
@@ -693,7 +775,9 @@ export function DesktopPet() {
           touchAction: "none",
           transition: dragRef.current.isDragging
             ? "none"
-            : "left 0.1s linear, top 0.1s linear",
+            : smoothShift
+              ? "left 0.35s ease, top 0.35s ease"
+              : "left 0.1s linear, top 0.1s linear",
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -767,7 +851,11 @@ export function DesktopPet() {
 
         {/* ---- 新增：猜拳小游戏面板 ---- */}
         {showGame && (
-          <div className="pet-panel" onPointerDown={(e) => e.stopPropagation()}>
+          <div
+            ref={rpsPanelRef}
+            className="pet-panel pet-panel-below"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
             <div className="pet-panel-title">猜拳小游戏</div>
             {gameResult && (
               <div className="pet-rps-result">
