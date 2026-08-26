@@ -519,8 +519,9 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  border: 1.5px solid #eee;
-  background: #fafafa;
+  border: 1.5px solid #3a3f47;
+  background: #3a3f47;
+  color: #fff;
   cursor: pointer;
   transition: transform 0.15s ease, background 0.15s ease;
   display: flex;
@@ -531,12 +532,11 @@ body {
 .pet-rps-btn svg {
   width: 22px;
   height: 22px;
-  color: #333;
 }
 
 .pet-rps-btn:hover {
   transform: scale(1.1);
-  background: #fff;
+  background: #4a505c;
 }
 
 /* 商城道具行 */
