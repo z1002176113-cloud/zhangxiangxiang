@@ -4,7 +4,7 @@ import { siteConfig } from "@/data/site.config";
 import { SkillTags } from "@/components/works/SkillTags";
 import { ToolTags } from "@/components/works/ToolTags";
 import { WorkTimeline } from "@/components/works/WorkTimeline";
-import { DesktopPet } from "@/components/works/DesktopPet";
+import { DesktopPet } from "@/components/pet/DesktopPet";
 
 export const metadata: Metadata = {
   title: "作品",
@@ -50,7 +50,7 @@ export default function WorksPage() {
         <WorkTimeline />
       </div>
 
-      {/* 桌宠 */}
+      {/* My Baby 桌宠（悬浮右下角） */}
       <DesktopPet />
     </div>
   );
