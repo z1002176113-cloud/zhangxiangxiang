@@ -4,7 +4,8 @@ import { zhCN } from "date-fns/locale";
 export function formatDate(dateStr: string): string {
   try {
     const date = parseISO(dateStr);
-    return format(date, "yyyy-MM-dd", { locale: zhCN });
+    const weekday = format(date, "EEEE", { locale: zhCN });
+    return `${format(date, "yyyy-MM-dd", { locale: zhCN })} ${weekday}`;
   } catch {
     return dateStr;
   }

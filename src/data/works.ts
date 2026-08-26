@@ -2,6 +2,24 @@ import type { WorkItem } from "@/types";
 
 export const works: WorkItem[] = [
   {
+    date: "2026-08-25",
+    title: "My Baby 桌宠 - 产品需求文档 PRD V1.0",
+    tags: ["PRD", "产品", "桌宠"],
+    description:
+      "My Baby 桌宠产品的第一版完整产品需求文档，涵盖产品定位、用户画像、功能清单、交互流程与验收标准。",
+    link: "/docs/My-Baby-桌宠-PRD-V1.0.docx",
+    linkLabel: "查看文档",
+  },
+  {
+    date: "2026-08-24",
+    title: "第一版需求 - 桌宠",
+    tags: ["需求", "产品", "桌宠"],
+    description:
+      "桌宠项目的第一版需求梳理文档，明确核心功能边界、优先级排序与初期实现路径。",
+    link: "/docs/第一版需求--桌宠.docx",
+    linkLabel: "查看文档",
+  },
+  {
     date: "2026-08-21",
     title: "故事转手绘视频",
     tags: ["视频", "手绘", "Node.js", "自动化"],
