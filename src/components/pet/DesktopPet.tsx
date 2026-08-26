@@ -173,6 +173,32 @@ export function DesktopPet() {
     [clampPosition]
   );
 
+  // 显示气泡
+  const showBubble = (msg: string) => {
+    setBubble(msg);
+    if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
+    bubbleTimerRef.current = setTimeout(() => setBubble(null), 2500);
+  };
+
+  // 点击交互
+  const handleClick = useCallback(() => {
+    setState("reacting");
+
+    // 显示气泡
+    const msg = BUBBLE_MESSAGES[Math.floor(Math.random() * BUBBLE_MESSAGES.length)];
+    showBubble(msg);
+
+    // 显示表情
+    const em = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+    setEmoji(em);
+    if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
+    emojiTimerRef.current = setTimeout(() => setEmoji(null), 1500);
+
+    // 1 秒后恢复 idle
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    stateTimerRef.current = setTimeout(() => setState("idle"), 1000);
+  }, []);
+
   // 拖拽结束
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
@@ -196,32 +222,6 @@ export function DesktopPet() {
     },
     [handleClick]
   );
-
-  // 点击交互
-  const handleClick = useCallback(() => {
-    setState("reacting");
-
-    // 显示气泡
-    const msg = BUBBLE_MESSAGES[Math.floor(Math.random() * BUBBLE_MESSAGES.length)];
-    showBubble(msg);
-
-    // 显示表情
-    const em = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
-    setEmoji(em);
-    if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
-    emojiTimerRef.current = setTimeout(() => setEmoji(null), 1500);
-
-    // 1 秒后恢复 idle
-    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
-    stateTimerRef.current = setTimeout(() => setState("idle"), 1000);
-  }, []);
-
-  // 显示气泡
-  const showBubble = (msg: string) => {
-    setBubble(msg);
-    if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
-    bubbleTimerRef.current = setTimeout(() => setBubble(null), 2500);
-  };
 
   // 关闭桌宠
   const handleClose = useCallback(() => {
