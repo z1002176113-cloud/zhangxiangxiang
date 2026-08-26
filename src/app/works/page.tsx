@@ -4,6 +4,7 @@ import { siteConfig } from "@/data/site.config";
 import { SkillTags } from "@/components/works/SkillTags";
 import { ToolTags } from "@/components/works/ToolTags";
 import { WorkTimeline } from "@/components/works/WorkTimeline";
+import { DesktopPet } from "@/components/works/DesktopPet";
 
 export const metadata: Metadata = {
   title: "作品",
@@ -50,25 +51,7 @@ export default function WorksPage() {
       </div>
 
       {/* 桌宠 */}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-50 select-none">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/pet.png"
-          alt="桌宠"
-          width={94}
-          height={80}
-          className="animate-bounce-slow drop-shadow-lg"
-        />
-        <style>{`
-          @keyframes bounce-slow {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-          }
-          .animate-bounce-slow {
-            animation: bounce-slow 2s ease-in-out infinite;
-          }
-        `}</style>
-      </div>
+      <DesktopPet />
     </div>
   );
 }
