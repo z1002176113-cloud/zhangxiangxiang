@@ -17,6 +17,56 @@ const BUBBLES = [
 
 const EXPRESSIONS = ["😊", "😍", "🤔", "😴", "😎", "🥳", "😅", "🤗"];
 
+/**
+ * 使用 canvas 去除图片的黑色背景：
+ * - 亮度低于阈值的像素 → 完全透明
+ * - 阈值附近的像素 → 渐变透明（边缘柔和）
+ */
+function removeBlackBackground(
+  src: string,
+  threshold = 40
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(src);
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+        // 计算亮度
+        const brightness = (r + g + b) / 3;
+        if (brightness < threshold) {
+          // 完全透明
+          data[i + 3] = 0;
+        } else if (brightness < threshold + 30) {
+          // 边缘渐变透明
+          const alpha = ((brightness - threshold) / 30) * a;
+          data[i + 3] = alpha;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = src;
+  });
+}
+
 export function DesktopPet() {
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [petState, setPetState] = useState<PetState>("idle");
@@ -25,13 +75,14 @@ export function DesktopPet() {
   const [expression, setExpression] = useState("😊");
   const [isDragging, setIsDragging] = useState(false);
   const [frame, setFrame] = useState(0);
+  const [petSrc, setPetSrc] = useState<string | null>(null);
 
   const dragOffset = useRef({ x: 0, y: 0 });
   const walkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialized = useRef(false);
 
-  // 初始化位置到右下角
+  // 初始化 + 去黑背景
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
@@ -39,6 +90,9 @@ export function DesktopPet() {
       x: window.innerWidth - 120,
       y: window.innerHeight - 120,
     });
+    removeBlackBackground("/pet.png", 40)
+      .then(setPetSrc)
+      .catch(() => setPetSrc("/pet.png"));
   }, []);
 
   // 帧动画
@@ -126,16 +180,13 @@ export function DesktopPet() {
     let translate = "";
 
     if (petState === "idle") {
-      // 站立：轻微上下浮动（呼吸）
       const bob = Math.sin(frame * 0.5) * 3;
       translate = `translateY(${bob}px)`;
     } else if (petState === "walk") {
-      // 走路：左右摆动 + 上下跳跃
       const sway = Math.sin(frame * 1.2) * 4;
       const hop = Math.abs(Math.sin(frame * 1.2)) * -6;
       translate = `translate(${sway}px, ${hop}px)`;
     } else if (petState === "click") {
-      // 点击反应：弹跳
       translate = `translateY(-12px) scale(1.15)`;
     }
 
@@ -178,17 +229,15 @@ export function DesktopPet() {
           transition: petState === "walk" ? "left 2.5s linear, top 0.3s ease" : "none",
         }}
       >
-        {/* mix-blend-mode 去黑色背景 */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/pet.png"
+          src={petSrc || "/pet.png"}
           alt="桌宠"
           width={94}
           height={80}
           draggable={false}
           className="block"
           style={{
-            mixBlendMode: "screen",
             filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.15))",
           }}
         />
