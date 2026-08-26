@@ -18,13 +18,14 @@ const BUBBLES = [
 const EXPRESSIONS = ["😊", "😍", "🤔", "😴", "😎", "🥳", "😅", "🤗"];
 
 /**
- * 使用 canvas 去除图片的黑色背景：
- * - 亮度低于阈值的像素 → 完全透明
- * - 阈值附近的像素 → 渐变透明（边缘柔和）
+ * 使用 canvas 去除图片的黑色背景（保留深色细节如眼睛）：
+ * - 先计算每个像素的"邻域背景度"：周围 5x5 区域内暗像素占比
+ * - 只有当像素本身暗 AND 周围大部分也暗 → 判定为背景（透明）
+ * - 如果像素暗但周围有很多亮色像素 → 判定为物体细节（保留，如眼睛）
  */
 function removeBlackBackground(
   src: string,
-  threshold = 40
+  threshold = 30
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -39,24 +40,56 @@ function removeBlackBackground(
         return;
       }
       ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const w = canvas.width;
+      const h = canvas.height;
+      const imageData = ctx.getImageData(0, 0, w, h);
       const data = imageData.data;
+      const srcData = new Uint8ClampedArray(data);
 
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        const a = data[i + 3];
-        // 计算亮度
-        const brightness = (r + g + b) / 3;
-        if (brightness < threshold) {
-          // 完全透明
-          data[i + 3] = 0;
-        } else if (brightness < threshold + 30) {
-          // 边缘渐变透明
-          const alpha = ((brightness - threshold) / 30) * a;
-          data[i + 3] = alpha;
+      // 第一步：计算每个像素的邻域暗度（5x5 窗口）
+      const darknessMap = new Float32Array(w * h);
+      const windowSize = 5;
+      const half = Math.floor(windowSize / 2);
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          let darkCount = 0;
+          let total = 0;
+          for (let dy = -half; dy <= half; dy++) {
+            for (let dx = -half; dx <= half; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+              total++;
+              const idx = (ny * w + nx) * 4;
+              const r = srcData[idx];
+              const g = srcData[idx + 1];
+              const b = srcData[idx + 2];
+              const brightness = (r + g + b) / 3;
+              if (brightness < threshold) darkCount++;
+            }
+          }
+          darknessMap[y * w + x] = total > 0 ? darkCount / total : 0;
         }
+      }
+
+      // 第二步：根据邻域暗度决定透明度
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const r = srcData[i];
+        const g = srcData[i + 1];
+        const b = srcData[i + 2];
+        const a = srcData[i + 3];
+        const brightness = (r + g + b) / 3;
+        const darkness = darknessMap[p];
+
+        if (brightness < threshold && darkness > 0.7) {
+          // 像素暗 + 周围大部分也暗 → 背景（透明）
+          data[i + 3] = 0;
+        } else if (brightness < threshold && darkness > 0.5) {
+          // 像素暗 + 周围一半暗 → 可能是背景边缘，半透明
+          data[i + 3] = a * 0.3;
+        }
+        // 否则保留原样（包括暗像素但周围亮的情况 → 保留眼睛等深色细节）
       }
 
       ctx.putImageData(imageData, 0, 0);
