@@ -92,6 +92,87 @@ const RPS_BEATS: Record<RPSChoice, RPSChoice> = {
   paper: "rock",
 };
 
+// 猜拳按钮手势图标（扁平化矢量风格）
+// 颜色继承按钮文字色（currentColor），保证在浅色圆角按钮上清晰可辨
+function RPSIcon({ choice }: { choice: RPSChoice }) {
+  if (choice === "rock") {
+    // 石头：握拳手势（拳身 + 左侧横拇指 + 顶部白色指缝区分四指）
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        width="22"
+        height="22"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <rect x="4.6" y="10" width="4" height="7.5" rx="2" />
+        <rect x="7.5" y="4" width="9" height="16.5" rx="4.5" />
+        <path
+          d="M9.3 6.2v2.8M11 5.6v3.4M12.7 5.6v3.4M14.4 6.2v2.8"
+          stroke="#fff"
+          strokeWidth="0.85"
+          strokeLinecap="round"
+          fill="none"
+        />
+      </svg>
+    );
+  }
+  if (choice === "scissors") {
+    // 剪刀：剪刀手手势（手掌 + 食指中指张开呈 V 形，其余手指收拢）
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        width="22"
+        height="22"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <rect x="5.5" y="11" width="13" height="9.5" rx="3.5" />
+        <rect
+          x="7.6"
+          y="3"
+          width="1.8"
+          height="10"
+          rx="0.9"
+          transform="rotate(-10 8.5 8)"
+        />
+        <rect
+          x="14.6"
+          y="3"
+          width="1.8"
+          height="10"
+          rx="0.9"
+          transform="rotate(10 15.5 8)"
+        />
+      </svg>
+    );
+  }
+  // 布：手掌张开手势（手掌 + 五指张开）
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="22"
+      height="22"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="6" y="11" width="12" height="9.5" rx="3" />
+      <rect x="6.6" y="7" width="1.8" height="6" rx="0.9" />
+      <rect x="9" y="5" width="1.8" height="8" rx="0.9" />
+      <rect x="11.4" y="4" width="1.8" height="9" rx="0.9" />
+      <rect x="13.8" y="5.5" width="1.8" height="7.5" rx="0.9" />
+      <rect
+        x="4.4"
+        y="10.5"
+        width="1.8"
+        height="6.5"
+        rx="0.9"
+        transform="rotate(18 5.3 13)"
+      />
+    </svg>
+  );
+}
+
 interface Position {
   x: number;
   y: number;
@@ -873,7 +954,7 @@ export function DesktopPet() {
                   onClick={() => handleRPS(o.key)}
                   title={o.label}
                 >
-                  {o.emoji}
+                  <RPSIcon choice={o.key} />
                 </button>
               ))}
             </div>
