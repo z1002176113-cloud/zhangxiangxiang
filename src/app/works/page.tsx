@@ -48,6 +48,27 @@ export default function WorksPage() {
       <div className="mt-12">
         <WorkTimeline />
       </div>
+
+      {/* 桌宠 */}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-50 select-none">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/pet.png"
+          alt="桌宠"
+          width={94}
+          height={80}
+          className="animate-bounce-slow drop-shadow-lg"
+        />
+        <style>{`
+          @keyframes bounce-slow {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+          }
+          .animate-bounce-slow {
+            animation: bounce-slow 2s ease-in-out infinite;
+          }
+        `}</style>
+      </div>
     </div>
   );
 }
