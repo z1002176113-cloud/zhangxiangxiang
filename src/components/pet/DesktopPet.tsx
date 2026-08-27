@@ -12,6 +12,9 @@ type PetState =
   | "angry" // 捂脑袋委屈生气
   | "laughing" // 挠痒大笑
   | "spinning" // 转圈欢快
+  | "confused" // 疑惑（拖拽松手落地动画第一段）
+  | "scared" // 害怕（拖拽松手落地动画第二段）
+  | "relieved" // 长舒一口气（拖拽松手落地动画第三段）
   | "happy" // 猜拳赢/投喂开心
   | "sad"; // 猜拳输/进入冷静
 
@@ -54,6 +57,12 @@ const CIRCLE_ANGLE = Math.PI * 2;
 // 桌宠渲染尺寸（px）
 const PET_SIZE = 80;
 const MARGIN = 16;
+
+// 长按拖动：按住后位移超过该阈值（px）判定为拖拽，屏蔽本次点击
+const DRAG_THRESHOLD = 8;
+
+// 桌宠坐标持久化存储键（拖拽结束保存，刷新页面位置不重置）
+const PET_POS_KEY = "my-baby-pet-pos";
 
 // 交互区域高度比例（相对于容器高度）
 const ZONE_HALO_END = 0.22; // 头顶区：0 - 22%
@@ -323,7 +332,11 @@ function loadPersisted(): PersistedState {
 
 export function DesktopPet() {
   // ---- 原有状态：位置 / 动画 / 朝向 / 气泡 / 表情 / 关闭按钮 ----
+  // 位置：客户端首次渲染与 SSR 保持一致（-1，避免 hydration 不匹配），
+  // 挂载后在 effect 中恢复拖拽保存的坐标或设置默认右下角
   const [position, setPosition] = useState<Position>({ x: -1, y: -1 });
+  // 最新坐标引用：拖拽结束保存坐标时读取，避免闭包拿到旧值
+  const positionRef = useRef<Position>({ x: -1, y: -1 });
   const [state, setState] = useState<PetState>("idle");
   const [facing, setFacing] = useState<"left" | "right">("right");
   const [bubble, setBubble] = useState<string | null>(null);
@@ -353,6 +366,8 @@ export function DesktopPet() {
 
   // ---- 新增：互动状态（点击桌宠激活，鼠标离开退出）----
   const [interactionActive, setInteractionActive] = useState(false); // 是否处于手势监听状态
+  // 拖拽标志位：位移超过阈值进入拖拽模式，拖拽期间跳过全部手势识别
+  const [isDragging, setIsDragging] = useState(false);
 
   // ---- 新增：多功能侧边面板 ----
   const [showSide, setShowSide] = useState(false); // 侧边面板开关
@@ -408,6 +423,14 @@ export function DesktopPet() {
 
   // ---- 原有 refs ----
   const petRef = useRef<HTMLDivElement>(null);
+  // ---- 新增：拖拽过程数据（按下起点 / 偏移 / 是否发生过位移）----
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetY: number;
+    dragged: boolean; // 本次按压是否发生过超过阈值的位移
+  }>({ startX: 0, startY: 0, offsetX: 0, offsetY: 0, dragged: false });
   const wanderRef = useRef<{
     targetX: number;
     speed: number;
@@ -441,13 +464,8 @@ export function DesktopPet() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null); // 录屏实例
   const mediaStreamRef = useRef<MediaStream | null>(null); // 屏幕捕获流
 
-  // ---- 初始化位置（右下角）----
-  useEffect(() => {
-    setPosition({
-      x: window.innerWidth - PET_SIZE - MARGIN,
-      y: window.innerHeight - PET_SIZE - MARGIN,
-    });
-  }, []);
+  // （位置恢复 / positionRef 同步 effect 在 clampPosition 定义之后，
+  //   避免在初始化前引用导致的暂时性死区错误）
 
   // （持久化数据已通过 useState 惰性初始化加载，无需挂载时再 setState，
   //   避免保存 effect 用初始空值覆盖 localStorage）
@@ -537,6 +555,26 @@ export function DesktopPet() {
     };
   }, []);
 
+  // ---- 初始化位置：优先恢复拖拽保存的坐标（localStorage），否则默认右下角 ----
+  // 客户端首次渲染保持与 SSR 一致的 -1（避免 hydration 不匹配导致 DOM 不更新），
+  // 挂载后再读取本地坐标并渲染，DOM 才能正确恢复位置
+  useEffect(() => {
+    const saved = loadJSON<Position>(PET_POS_KEY, { x: -1, y: -1 });
+    if (saved.x >= 0 && saved.y >= 0) {
+      setPosition(clampPosition(saved.x, saved.y));
+    } else {
+      setPosition({
+        x: window.innerWidth - PET_SIZE - MARGIN,
+        y: window.innerHeight - PET_SIZE - MARGIN,
+      });
+    }
+  }, [clampPosition]);
+
+  // ---- 同步最新坐标到 ref（拖拽结束保存时使用）----
+  useEffect(() => {
+    positionRef.current = position;
+  }, [position]);
+
   // ---- 自动游走逻辑（原有，保留）----
   useEffect(() => {
     let lastTime = performance.now();
@@ -547,6 +585,12 @@ export function DesktopPet() {
 
       // 如果在暂停中，不移动
       if (currentTime < wanderRef.current.pauseUntil) {
+        animFrameRef.current = requestAnimationFrame(wander);
+        return;
+      }
+
+      // 拖拽中：不自动游走，避免行走动画与拖拽位置互相冲突
+      if (isDragging) {
         animFrameRef.current = requestAnimationFrame(wander);
         return;
       }
@@ -591,7 +635,7 @@ export function DesktopPet() {
 
     animFrameRef.current = requestAnimationFrame(wander);
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [position.x, clampPosition]);
+  }, [position.x, clampPosition, isDragging]);
 
   // ========== 基础工具函数 ==========
 
@@ -608,6 +652,17 @@ export function DesktopPet() {
     setBubble(msg);
     if (bubbleTimerRef.current) clearTimeout(bubbleTimerRef.current);
     bubbleTimerRef.current = setTimeout(() => setBubble(null), 2500);
+  };
+
+  // 播放顺序动画序列（用于拖拽松手落地三段动画：疑惑 → 害怕 → 舒一口气）
+  const playSequence = (seq: { s: PetState; ms: number }[]) => {
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    let acc = 0;
+    seq.forEach((step) => {
+      setTimeout(() => setState(step.s), acc);
+      acc += step.ms;
+    });
+    stateTimerRef.current = setTimeout(() => setState("idle"), acc);
   };
 
   // 重置漫游（原逻辑，可指定暂停时长，用于长动画场景）
@@ -1133,16 +1188,16 @@ export function DesktopPet() {
     }, 1000);
   };
 
-  // ========== 指针交互（点击激活 + 手势识别）==========
+  // ========== 指针交互（点击激活 + 手势识别 + 长按拖拽）==========
   // 规则：
-  // 1. 拖动移动功能已删除，鼠标滑动不再移动桌宠，桌宠位置不受鼠标影响
-  // 2. 第一次点击桌宠 → 激活互动模式，才开始监听手势
-  // 3. 激活后仅当鼠标在桌宠范围内时识别手势（点击脑袋/肚子、头顶画圈）
-  // 4. 鼠标离开桌宠（pointerleave）→ 立即退出互动、重置手势轨迹
-  // 5. 离开后需重新点击桌宠才能再次互动
+  // 1. 第一次点击桌宠 → 激活互动模式，开始监听手势（不进入拖拽）
+  // 2. 激活后按住并移动超过 8px → 进入拖拽模式（isDragging），可自由拖动桌宠
+  // 3. 拖拽期间跳过全部手势识别（挠痒 / 点击脑袋 / 画圈），松手保存坐标 + 落地动画
+  // 4. 激活后仅当鼠标在桌宠范围内时识别手势；鼠标离开 → 立即退出互动、重置轨迹
+  // 5. 离开后需重新点击桌宠才能再次互动；拖拽中 mouseleave 不退出拖拽
 
-  // 按压开始：未激活则先激活（本次点击只激活、不触发肢体互动）；
-  // 已激活则记录按压区域与起点，供松开时识别点击手势
+  // 按压开始：未激活则先激活（本次点击只激活、不触发肢体互动、不拖拽）；
+  // 已激活则记录按压区域、起点与拖拽偏移，供移动/松开时区分拖拽与点击
   const handlePointerDown = (e: React.PointerEvent) => {
     // 冷静模式下禁用全部交互
     if (calmUntil && calmUntil > Date.now()) {
@@ -1164,7 +1219,7 @@ export function DesktopPet() {
 
     const g = gestureRef.current;
 
-    // 第一次点击桌宠：仅激活互动模式，不触发肢体互动
+    // 第一次点击桌宠：仅激活互动模式，不触发肢体互动，也不进入拖拽
     if (!interactionActive) {
       setInteractionActive(true);
       g.zone = "none";
@@ -1184,10 +1239,32 @@ export function DesktopPet() {
     g.lastAngleInit = false;
     g.gestureDone = false;
 
+    // 记录拖拽起点与按下偏移（供移动时计算新坐标）
+    dragRef.current.startX = e.clientX;
+    dragRef.current.startY = e.clientY;
+    dragRef.current.offsetX = e.clientX - rect.left;
+    dragRef.current.offsetY = e.clientY - rect.top;
+    dragRef.current.dragged = false;
+
+    // 按压期间暂停自动游走，避免行走动画与交互/拖拽冲突
+    resetWander();
+
     setShowClose(true);
   };
 
-  // 指针移动：仅激活后、鼠标在桌宠内时识别手势（当前仅头顶画圈）
+  // 拖拽移动桌宠：按指针当前位置与按下时偏移计算新坐标，并做屏幕边界限制
+  const movePet = (e: React.PointerEvent) => {
+    const next = clampPosition(
+      e.clientX - dragRef.current.offsetX,
+      e.clientY - dragRef.current.offsetY
+    );
+    setPosition(next);
+    // 同步最新坐标到 ref，保证拖拽松手瞬间保存的是最后位置
+    positionRef.current = next;
+  };
+
+  // 指针移动：拖拽中只更新位置；未拖拽时识别手势（头顶画圈），
+  // 头部/身体区域按住位移超过阈值（8px）判定为拖拽
   const handlePointerMove = (e: React.PointerEvent) => {
     const g = gestureRef.current;
     if (!interactionActive) return;
@@ -1197,7 +1274,13 @@ export function DesktopPet() {
     const rect = petRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    // 头顶区域：画圈手势识别（计算绕中心的角度累计）
+    // 拖拽模式：只更新桌宠位置，跳过全部手势识别（挠痒 / 点击脑袋 / 画圈）
+    if (isDragging) {
+      movePet(e);
+      return;
+    }
+
+    // 头顶区域：画圈手势识别（计算绕中心的角度累计），不进入拖拽
     if (g.zone === "halo") {
       const cx = rect.width / 2;
       const cy = (rect.height * ZONE_HALO_END) / 2;
@@ -1218,20 +1301,63 @@ export function DesktopPet() {
         g.gestureDone = true;
         handleSpin();
       }
+      return;
     }
-    // 头部/身体区域：无拖拽、无滑动，移动时不做处理（点击在松开时识别）
+
+    // 头部/身体区域：按住移动超过位移阈值 → 判定为拖拽（屏蔽本次点击）
+    const moved =
+      Math.abs(e.clientX - dragRef.current.startX) +
+      Math.abs(e.clientY - dragRef.current.startY);
+    if (moved > DRAG_THRESHOLD) {
+      setIsDragging(true);
+      dragRef.current.dragged = true;
+      // 捕获指针：拖拽中鼠标移出桌宠区域仍持续跟踪，mouseleave 不退出拖拽
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* 个别浏览器可能抛错，忽略即可 */
+      }
+      movePet(e);
+    }
   };
 
-  // 指针松开：识别点击手势（脑袋生气 / 肚子挠痒 / 其他随机交互）
+  // 指针松开：判定 拖拽结束（保存坐标 + 落地动画）/ 手势完成 / 点击 / 普通结束
   const handlePointerUp = (e: React.PointerEvent) => {
     // 冷静模式下禁止一切交互
     if (calmUntil && calmUntil > Date.now()) {
       gestureRef.current.zone = "none";
+      setIsDragging(false);
+      dragRef.current.dragged = false;
       return;
     }
     const g = gestureRef.current;
     // 未激活点击 / 已离开时 zone 为 "none"，直接忽略
-    if (g.zone === "none") return;
+    if (g.zone === "none") {
+      setIsDragging(false);
+      dragRef.current.dragged = false;
+      return;
+    }
+
+    // ---- 拖拽结束：保存新坐标 + 播放落地动画（疑惑→害怕→舒一口气）----
+    if (isDragging || dragRef.current.dragged) {
+      setIsDragging(false);
+      setShowClose(false);
+      // 保存桌宠新坐标到本地存储，刷新页面位置不重置
+      saveJSON(PET_POS_KEY, positionRef.current);
+      // 拖拽松手落地 → 疑惑 → 害怕 → 长舒一口气 三段动画
+      playSequence([
+        { s: "confused", ms: 1000 },
+        { s: "scared", ms: 1200 },
+        { s: "relieved", ms: 1200 },
+      ]);
+      showBubble("哎呀！吓死我了…呼~");
+      // 三段动画总时长 3.4s，暂停自动游走 4s 防止被行走动画打断
+      resetWander(4000);
+      g.zone = "none";
+      g.gestureDone = false;
+      dragRef.current.dragged = false;
+      return;
+    }
 
     const moved =
       Math.abs(e.clientX - g.downX) + Math.abs(e.clientY - g.downY);
@@ -1275,8 +1401,10 @@ export function DesktopPet() {
     resetWander();
   };
 
-  // 鼠标离开桌宠区域：立即退出互动状态，重置全部手势轨迹记录
+  // 鼠标离开桌宠区域：非拖拽状态下立即退出互动状态，重置全部手势轨迹记录；
+  // 拖拽中 mouseleave 不退出拖拽（指针已捕获，可继续拖动）
   const handlePointerLeave = () => {
+    if (isDragging) return;
     setInteractionActive(false);
     const g = gestureRef.current;
     g.zone = "none";
@@ -1432,6 +1560,9 @@ export function DesktopPet() {
     angry: "pet-angry",
     laughing: "pet-laughing",
     spinning: "pet-spinning",
+    confused: "pet-confused",
+    scared: "pet-scared",
+    relieved: "pet-relieved",
     happy: "pet-happy",
     sad: "pet-sad",
   }[state];
@@ -1457,12 +1588,14 @@ export function DesktopPet() {
           width: `${PET_SIZE}px`,
           height: `${PET_SIZE}px`,
           zIndex: 9999,
-          cursor: "grab",
+          cursor: isDragging ? "grabbing" : "grab",
           userSelect: "none",
           touchAction: "none",
-          transition: smoothShift
-            ? "left 0.35s ease, top 0.35s ease"
-            : "left 0.1s linear, top 0.1s linear",
+          transition: isDragging
+            ? "none"
+            : smoothShift
+              ? "left 0.35s ease, top 0.35s ease"
+              : "left 0.1s linear, top 0.1s linear",
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
