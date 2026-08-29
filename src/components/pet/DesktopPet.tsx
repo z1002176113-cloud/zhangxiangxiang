@@ -16,7 +16,8 @@ type PetState =
   | "scared" // 害怕（拖拽松手落地动画第二段）
   | "relieved" // 长舒一口气（拖拽松手落地动画第三段）
   | "happy" // 猜拳赢/投喂开心
-  | "sad"; // 猜拳输/进入冷静
+  | "sad" // 猜拳输/进入冷静
+  | "eating"; // 拍照投喂进食中
 
 // 交互区域
 type Zone = "halo" | "head" | "body";
@@ -63,6 +64,52 @@ const DRAG_THRESHOLD = 8;
 
 // 桌宠坐标持久化存储键（拖拽结束保存，刷新页面位置不重置）
 const PET_POS_KEY = "my-baby-pet-pos";
+
+// ========== 新增：拍照投喂（图像识别 + 投喂动画 + 语音播报）==========
+const FEED_DAILY_LIMIT = 5; // 每日拍照投喂上限（本地持久化，0 点重置）
+const FEED_LIMIT_KEY = "my-baby-pet-feed-limit"; // 每日次数持久化键
+const FEED_CONF_THRESHOLD = 0.6; // 置信度阈值：低于此值视为非食物提示
+// 识别成功后的趣味台词（AI 生成模拟：内置随机模板，后续可接入大模型动态生成）
+const FOOD_LINES = [
+  (n: string) => `哇！${n}真香！我太爱了~😋`,
+  (n: string) => `${n}！好美味，谢谢你投喂~💖`,
+  (n: string) => `咔嚓咔嚓，${n}超级好吃！🍽️`,
+  (n: string) => `今天能吃上${n}，太幸福啦！✨`,
+];
+
+// 读取今日剩余拍照投喂次数（按日期判断，跨天即 0 点重置）
+function loadFeedLeft(): number {
+  if (typeof window === "undefined") return FEED_DAILY_LIMIT;
+  try {
+    const raw = localStorage.getItem(FEED_LIMIT_KEY);
+    if (!raw) return FEED_DAILY_LIMIT;
+    const d = JSON.parse(raw);
+    if (d.date !== new Date().toDateString()) return FEED_DAILY_LIMIT;
+    return Math.max(0, FEED_DAILY_LIMIT - (d.count || 0));
+  } catch {
+    return FEED_DAILY_LIMIT;
+  }
+}
+
+// 消耗一次拍照投喂额度（写入 localStorage，按天记录）
+function consumeFeedCount(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const today = new Date().toDateString();
+    let count = 0;
+    const raw = localStorage.getItem(FEED_LIMIT_KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (d.date === today) count = d.count || 0;
+    }
+    localStorage.setItem(
+      FEED_LIMIT_KEY,
+      JSON.stringify({ date: today, count: count + 1 })
+    );
+  } catch {
+    /* localStorage 不可用时静默 */
+  }
+}
 
 // 交互区域高度比例（相对于容器高度）
 const ZONE_HALO_END = 0.22; // 头顶区：0 - 22%
@@ -357,6 +404,18 @@ export function DesktopPet() {
   // ---- 新增：UI 面板状态 ----
   const [showGame, setShowGame] = useState(false); // 猜拳面板
   const [showShop, setShowShop] = useState(false); // 商城面板
+  // ---- 新增：拍照投喂面板 ----
+  const [showFeed, setShowFeed] = useState(false); // 拍照投喂面板开关
+  const [feedBusy, setFeedBusy] = useState(false); // 识别请求中
+  const [feedLeft, setFeedLeft] = useState(() => loadFeedLeft()); // 今日剩余投喂次数
+  const [cameraOn, setCameraOn] = useState(false); // 摄像头预览是否开启
+  const [flying, setFlying] = useState<{
+    emoji: string;
+    fromX: number;
+    fromY: number;
+    dx: number;
+    dy: number;
+  } | null>(null); // 投喂飞行动画（食物从面板飞到桌宠嘴边）
   const [gameResult, setGameResult] = useState<{
     player: RPSChoice;
     comp: RPSChoice;
@@ -420,6 +479,13 @@ export function DesktopPet() {
   const rpsPanelRef = useRef<HTMLDivElement>(null); // 猜拳面板（用于测量弹窗尺寸）
   const rpsOriginRef = useRef<Position | null>(null); // 打开猜拳弹窗时桌宠的原始坐标
   const shiftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 过渡结束恢复计时器
+
+  // ---- 新增：拍照投喂（复用猜拳弹窗定位逻辑）----
+  const feedPanelRef = useRef<HTMLDivElement>(null); // 拍照投喂面板（定位测量）
+  const feedVideoRef = useRef<HTMLVideoElement>(null); // 摄像头预览
+  const feedStreamRef = useRef<MediaStream | null>(null); // 摄像头媒体流
+  const feedFileInputRef = useRef<HTMLInputElement>(null); // 本地上传（隐藏 input）
+  const feedRef = useRef<{ name: string; item: ItemType } | null>(null); // 当前识别食物（供动画结束回调）
 
   // ---- 原有 refs ----
   const petRef = useRef<HTMLDivElement>(null);
@@ -805,6 +871,207 @@ export function DesktopPet() {
     showBubble(`谢谢你投喂 ${name}！我不冷静啦！💖`);
     if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
     stateTimerRef.current = setTimeout(() => setState("idle"), 1500);
+  };
+
+  // ========== 新增：拍照投喂（图像识别 + 投喂动画 + 语音播报）==========
+  // ---- 预留：3D 模型扩展桥接接口 ----
+  // 后续接入 3D 桌宠模型（如 three.js 加载 glTF）时，在页面初始化注册：
+  //   window.__PET_3D_BRIDGE = {
+  //     onFeed: (foodName: string) => { /* 播放 3D 进食动画 */ },
+  //     setEmotion: (s: string) => { /* 切换 3D 表情 */ },
+  //   };
+  // 下方 feedNow() 已兼容调用（不存在则静默），无需改动其它逻辑。
+
+  // 语音播报趣味台词（浏览器 SpeechSynthesis，需 HTTPS/localhost）
+  const speak = (text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "zh-CN";
+      u.rate = 1.1;
+      u.pitch = 1.2;
+      window.speechSynthesis.speak(u);
+    } catch {
+      /* 语音不可用时静默 */
+    }
+  };
+
+  // 打开摄像头（需 HTTPS/localhost，用户需授权）
+  const openCamera = async () => {
+    if (!window.isSecureContext) {
+      showBubble("摄像头需要 HTTPS/localhost 环境");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showBubble("当前浏览器不支持摄像头");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false,
+      });
+      feedStreamRef.current = stream;
+      setCameraOn(true);
+      // 等视频元素挂载后再绑定媒体流
+      setTimeout(() => {
+        if (feedVideoRef.current) feedVideoRef.current.srcObject = stream;
+      }, 60);
+    } catch {
+      showBubble("无法访问摄像头（可能已被拒绝授权）");
+    }
+  };
+
+  const stopCamera = () => {
+    feedStreamRef.current?.getTracks().forEach((t) => t.stop());
+    feedStreamRef.current = null;
+    setCameraOn(false);
+  };
+
+  // 拍照：把摄像头当前帧画到 canvas → dataURL
+  const capturePhoto = () => {
+    const video = feedVideoRef.current;
+    if (!video || !video.videoWidth) {
+      showBubble("摄像头画面未就绪，请稍后再拍");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    runFoodRecognition(canvas.toDataURL("image/jpeg", 0.85));
+  };
+
+  // 本地上传图片（前端压缩到最大 640px，减小上传体积）
+  const handleFeedFile = (file: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 640;
+        let w = img.width;
+        let h = img.height;
+        if (w > max || h > max) {
+          const scale = Math.min(max / w, max / h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        c.getContext("2d")?.drawImage(img, 0, 0, w, h);
+        runFoodRecognition(c.toDataURL("image/jpeg", 0.85));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // 提交图片到后端识别（消费每日额度；置信度<0.6 或非食物 → 提示）
+  const runFoodRecognition = async (dataUrl: string) => {
+    if (feedBusy) return;
+    if (feedLeft <= 0) {
+      showBubble(
+        `今日拍照投喂次数已用完（${FEED_DAILY_LIMIT} 次），明天 0 点重置~`
+      );
+      return;
+    }
+    setFeedBusy(true);
+    showBubble("正在识别图片中的食物…🔍");
+    try {
+      // 调用后端中转接口（密钥在后端环境变量，前端不接触密钥）
+      const res = await fetch("/api/recognize-food", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        showBubble(data?.message || "识别失败，请稍后重试");
+        return;
+      }
+      // 完成一次识别 → 占用一次每日额度（0 点自动重置）
+      consumeFeedCount();
+      setFeedLeft((v) => Math.max(0, v - 1));
+      // 置信度低于阈值或识别为非食物 → 提示，不生成道具
+      if (!data.isFood || data.confidence < FEED_CONF_THRESHOLD) {
+        const why = !data.isFood
+          ? "识别到的不是食物"
+          : `置信度 ${(data.confidence * 100).toFixed(0)}% 偏低`;
+        showBubble(`${why}，换个清晰的食物照片试试~`);
+        return;
+      }
+      onFeedSuccess(data.name);
+    } catch {
+      showBubble("网络异常，识别失败");
+    } finally {
+      setFeedBusy(false);
+    }
+  };
+
+  // 识别成功：生成数字食物道具存入背包（与商城道具通用）→ 触发投喂动画 + 解除冷静
+  const onFeedSuccess = (name: string) => {
+    // 根据食物名映射道具类型（复用 FOOD_MAP 的映射规则，未命中默认小鱼干）
+    const match = FOOD_MAP.find(
+      (f) => f.name.includes(name) || name.includes(f.name)
+    );
+    const item: ItemType = match ? match.item : "fish";
+    // 生成数字食物道具存入背包（localStorage 由 items 持久化 effect 自动保存）
+    setItems((prev) => ({ ...prev, [item]: prev[item] + 1 }));
+    // 解除冷静（与商城投喂一致）
+    if (pendingCalmRef.current) {
+      clearTimeout(pendingCalmRef.current);
+      pendingCalmRef.current = null;
+    }
+    setCalmUntil(null);
+    // 记录本次识别结果供飞行动画结束回调使用
+    feedRef.current = { name, item };
+    const emoji = ITEMS.find((i) => i.key === item)?.emoji ?? "🍽️";
+    // 2D 模拟投喂飞行动画：食物从面板中心飞到桌宠嘴边
+    const petEl = petRef.current;
+    const panelEl = feedPanelRef.current;
+    if (petEl && panelEl) {
+      const pr = panelEl.getBoundingClientRect();
+      const pr2 = petEl.getBoundingClientRect();
+      const fromX = pr.left + pr.width / 2;
+      const fromY = pr.top + 10;
+      setFlying({
+        emoji,
+        fromX,
+        fromY,
+        dx: pr2.left + pr2.width / 2 - fromX,
+        dy: pr2.top + pr2.height / 2 - fromY,
+      });
+    } else {
+      // 面板不可测量时直接进食
+      feedNow();
+    }
+  };
+
+  // 进食：切换进食 → 开心状态，播报 AI 趣味台词 + 语音，并调用 3D 桥接（如有）
+  const feedNow = () => {
+    const info = feedRef.current;
+    const name = info?.name ?? "食物";
+    setState("eating");
+    if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
+    stateTimerRef.current = setTimeout(() => setState("happy"), 900);
+    // 进食完毕后回到待机（避免覆盖用户后续交互状态）
+    setTimeout(() => {
+      setState((s) => (s === "happy" ? "idle" : s));
+    }, 2400);
+    // AI 生成趣味台词 + 语音播报
+    const line = FOOD_LINES[Math.floor(Math.random() * FOOD_LINES.length)](name);
+    showBubble(line);
+    speak(line);
+    // 预留 3D 模型扩展桥接（未注册则静默）
+    try {
+      (window as unknown as { __PET_3D_BRIDGE?: { onFeed?: (n: string) => void } })
+        .__PET_3D_BRIDGE?.onFeed?.(name);
+    } catch {
+      /* 忽略 */
+    }
   };
 
   // ========== 新增：对话模块 ==========
@@ -1439,20 +1706,21 @@ export function DesktopPet() {
       if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
       if (pendingCalmRef.current) clearTimeout(pendingCalmRef.current);
       if (shiftTimerRef.current) clearTimeout(shiftTimerRef.current);
-      // 卸载时释放录屏与语音资源
+      // 卸载时释放录屏、语音与摄像头资源
       mediaRecorderRef.current?.stop();
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      feedStreamRef.current?.getTracks().forEach((t) => t.stop());
       srRef.current?.stop();
     };
   }, []);
 
-  // ---- 新增：猜拳弹窗定位逻辑（弹窗只显示在桌宠正下方）----
+  // ---- 新增：猜拳 / 拍照投喂弹窗定位逻辑（弹窗只显示在桌宠正下方）----
 
-  // 打开猜拳弹窗：默认放在桌宠正下方、水平居中；若下方空间不足，
+  // 打开弹窗：默认放在桌宠正下方、水平居中；若下方空间不足，
   // 不移动弹窗，而是把桌宠整体向上偏移腾出空间（带平滑过渡），
-  // 且保证桌宠不跑出屏幕顶部。
+  // 且保证桌宠不跑出屏幕顶部。（猜拳面板与拍照投喂面板复用同一套逻辑）
   useEffect(() => {
-    if (!showGame) return;
+    if (!showGame && !showFeed) return;
     // 记录桌宠原始坐标（关闭弹窗后恢复）
     rpsOriginRef.current = { x: position.x, y: position.y };
     // 打开弹窗期间暂停自动漫游，保证弹窗跟随的桌宠位置稳定、关闭后能精确回位
@@ -1462,7 +1730,7 @@ export function DesktopPet() {
     // 等一帧，确保面板渲染完成、能测量到弹窗自身宽高
     const raf = requestAnimationFrame(() => {
       const petEl = petRef.current;
-      const panelEl = rpsPanelRef.current;
+      const panelEl = (showFeed ? feedPanelRef.current : rpsPanelRef.current);
       if (!petEl) return;
       const rect = petEl.getBoundingClientRect();
       const panelH = panelEl ? panelEl.getBoundingClientRect().height : 150;
@@ -1482,11 +1750,11 @@ export function DesktopPet() {
     });
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showGame]);
+  }, [showGame, showFeed]);
 
-  // 关闭猜拳弹窗：桌宠平滑回到打开前的位置，并恢复自动漫游
+  // 关闭弹窗：桌宠平滑回到打开前的位置，并恢复自动漫游
   useEffect(() => {
-    if (showGame) return;
+    if (showGame || showFeed) return;
     const origin = rpsOriginRef.current;
     if (origin) {
       rpsOriginRef.current = null;
@@ -1503,7 +1771,7 @@ export function DesktopPet() {
       wanderRef.current.pauseUntil = performance.now() + 600;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showGame]);
+  }, [showGame, showFeed]);
 
   // ---- 新增：侧边面板定位（依附桌宠 + 边界检测 + 避让情绪气泡）----
   useEffect(() => {
@@ -1565,6 +1833,7 @@ export function DesktopPet() {
     relieved: "pet-relieved",
     happy: "pet-happy",
     sad: "pet-sad",
+    eating: "pet-eating",
   }[state];
 
   // 猜拳结果文案（以玩家视角展示：你 vs 桌宠）
@@ -1644,9 +1913,24 @@ export function DesktopPet() {
               setShowGame((v) => !v);
               setShowShop(false);
               setShowSide(false);
+              setShowFeed(false);
             }}
           >
             ✊
+          </button>
+          <button
+            className="pet-tool-btn"
+            aria-label="拍照投喂"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowFeed((v) => !v);
+              setShowGame(false);
+              setShowShop(false);
+              setShowSide(false);
+            }}
+          >
+            📷
           </button>
           <button
             className="pet-tool-btn"
@@ -1657,6 +1941,7 @@ export function DesktopPet() {
               setShowShop((v) => !v);
               setShowGame(false);
               setShowSide(false);
+              setShowFeed(false);
             }}
           >
             🛍️
@@ -1670,11 +1955,33 @@ export function DesktopPet() {
               setShowSide((v) => !v);
               setShowGame(false);
               setShowShop(false);
+              setShowFeed(false);
             }}
           >
             🧰
           </button>
         </div>
+
+        {/* ---- 新增：投喂飞行动画（食物从面板飞到桌宠嘴边，动画结束后进食）---- */}
+        {flying && (
+          <div
+            className="pet-flying-food"
+            style={
+              {
+                left: flying.fromX,
+                top: flying.fromY,
+                "--fly-dx": `${flying.dx}px`,
+                "--fly-dy": `${flying.dy}px`,
+              } as React.CSSProperties
+            }
+            onAnimationEnd={() => {
+              setFlying(null);
+              feedNow();
+            }}
+          >
+            {flying.emoji}
+          </div>
+        )}
 
         {/* ---- 新增：冷静徽标（显示剩余时间，每秒刷新）---- */}
         {calmUntil && calmUntil > Date.now() && (
@@ -1714,6 +2021,88 @@ export function DesktopPet() {
             <button
               className="pet-panel-close"
               onClick={() => setShowGame(false)}
+            >
+              关闭
+            </button>
+          </div>
+        )}
+
+        {/* ---- 新增：拍照投喂面板（复用猜拳弹窗定位：桌宠正下方，空间不足自动上移桌宠）---- */}
+        {showFeed && (
+          <div
+            ref={feedPanelRef}
+            className="pet-panel pet-panel-below"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="pet-panel-title">📷 拍照投喂</div>
+            <div className="pet-feed-left">
+              今日剩余 <b>{feedLeft}</b> / {FEED_DAILY_LIMIT} 次（0 点重置）
+            </div>
+            {cameraOn ? (
+              <>
+                <video
+                  ref={feedVideoRef}
+                  className="pet-feed-video"
+                  autoPlay
+                  playsInline
+                  muted
+                />
+                <div className="pet-feed-btns">
+                  <button
+                    className="pet-item-btn"
+                    onClick={capturePhoto}
+                    disabled={feedBusy}
+                  >
+                    📸 拍照识别
+                  </button>
+                  <button
+                    className="pet-item-btn secondary"
+                    onClick={stopCamera}
+                  >
+                    关闭摄像头
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="pet-feed-btns">
+                <button
+                  className="pet-item-btn"
+                  onClick={openCamera}
+                  disabled={feedBusy}
+                >
+                  📷 打开摄像头
+                </button>
+                <button
+                  className="pet-item-btn"
+                  onClick={() => feedFileInputRef.current?.click()}
+                  disabled={feedBusy}
+                >
+                  🖼️ 本地上传
+                </button>
+              </div>
+            )}
+            <input
+              ref={feedFileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFeedFile(f);
+                e.target.value = "";
+              }}
+            />
+            {feedBusy && <div className="pet-hint">识别中…</div>}
+            <div className="pet-hint-muted">
+              需 HTTPS/localhost 环境；置信度低于 60% 或非食物将提示；
+              识别成功自动生成投喂道具并解除冷静
+            </div>
+            <button
+              className="pet-panel-close"
+              onClick={() => {
+                setShowFeed(false);
+                stopCamera();
+              }}
             >
               关闭
             </button>
