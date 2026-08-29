@@ -125,8 +125,15 @@ async function recognizeByBaidu(dataUrl: string): Promise<RecognitionResult> {
     );
   }
   const r = data.result?.[0];
+  // 接口调用正常但未识别出食物（如拍到风景/文字等）→ 判定为非食物，不降级演示模式
   if (!r || !r.name) {
-    throw new Error("百度菜品识别未返回结果，图片中可能没有食物");
+    return {
+      foodName: "未识别出食物",
+      foodType: "heart",
+      nutrition: "",
+      confidence: 0,
+      isFood: false,
+    };
   }
   const confidence =
     typeof r.probability === "number" ? r.probability : 0.9;
