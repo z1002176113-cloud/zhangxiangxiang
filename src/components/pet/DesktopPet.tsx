@@ -485,7 +485,9 @@ export function DesktopPet() {
   const feedVideoRef = useRef<HTMLVideoElement>(null); // 摄像头预览
   const feedStreamRef = useRef<MediaStream | null>(null); // 摄像头媒体流
   const feedFileInputRef = useRef<HTMLInputElement>(null); // 本地上传（隐藏 input）
-  const feedRef = useRef<{ name: string; item: ItemType } | null>(null); // 当前识别食物（供动画结束回调）
+  const feedRef = useRef<{ name: string; item: ItemType; nutrition?: string } | null>(
+    null
+  ); // 当前识别食物（供动画结束回调）
 
   // ---- 原有 refs ----
   const petRef = useRef<HTMLDivElement>(null);
@@ -982,14 +984,15 @@ export function DesktopPet() {
     showBubble("正在识别图片中的食物…🔍");
     try {
       // 调用后端中转接口（密钥在后端环境变量，前端不接触密钥）
-      const res = await fetch("/api/recognize-food", {
+      const res = await fetch("/api/vision-food", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: dataUrl }),
       });
       const data = await res.json().catch(() => null);
+      // 仅当接口调用失败时弹出错误提示（正常识别不受影响）
       if (!res.ok || !data?.ok) {
-        showBubble(data?.message || "识别失败，请稍后重试");
+        showBubble(data?.message || "识别服务调用失败，请稍后重试");
         return;
       }
       // 完成一次识别 → 占用一次每日额度（0 点自动重置）
@@ -1003,21 +1006,25 @@ export function DesktopPet() {
         showBubble(`${why}，换个清晰的食物照片试试~`);
         return;
       }
-      onFeedSuccess(data.name);
+      // 后端统一输出：{ foodName, foodType, nutrition, confidence, isFood }
+      onFeedSuccess(data.foodName, data.foodType, data.nutrition);
     } catch {
-      showBubble("网络异常，识别失败");
+      showBubble("网络异常，识别服务调用失败");
     } finally {
       setFeedBusy(false);
     }
   };
 
   // 识别成功：生成数字食物道具存入背包（与商城道具通用）→ 触发投喂动画 + 解除冷静
-  const onFeedSuccess = (name: string) => {
-    // 根据食物名映射道具类型（复用 FOOD_MAP 的映射规则，未命中默认小鱼干）
-    const match = FOOD_MAP.find(
-      (f) => f.name.includes(name) || name.includes(f.name)
-    );
-    const item: ItemType = match ? match.item : "fish";
+  const onFeedSuccess = (name: string, foodType?: string, nutrition?: string) => {
+    // 道具类型优先使用后端返回的 foodType（fish/heart/candy），
+    // 无效时回退到名称映射（复用 FOOD_MAP 规则，未命中默认小鱼干）
+    const validTypes: ItemType[] = ["fish", "heart", "candy"];
+    const item: ItemType =
+      foodType && (validTypes as string[]).includes(foodType)
+        ? (foodType as ItemType)
+        : FOOD_MAP.find((f) => f.name.includes(name) || name.includes(f.name))
+            ?.item ?? "fish";
     // 生成数字食物道具存入背包（localStorage 由 items 持久化 effect 自动保存）
     setItems((prev) => ({ ...prev, [item]: prev[item] + 1 }));
     // 解除冷静（与商城投喂一致）
@@ -1027,7 +1034,7 @@ export function DesktopPet() {
     }
     setCalmUntil(null);
     // 记录本次识别结果供飞行动画结束回调使用
-    feedRef.current = { name, item };
+    feedRef.current = { name, item, nutrition };
     const emoji = ITEMS.find((i) => i.key === item)?.emoji ?? "🍽️";
     // 2D 模拟投喂飞行动画：食物从面板中心飞到桌宠嘴边
     const petEl = petRef.current;
@@ -1061,9 +1068,9 @@ export function DesktopPet() {
     setTimeout(() => {
       setState((s) => (s === "happy" ? "idle" : s));
     }, 2400);
-    // AI 生成趣味台词 + 语音播报
+    // AI 生成趣味台词 + 语音播报（带营养信息：后端返回 calorie 等）
     const line = FOOD_LINES[Math.floor(Math.random() * FOOD_LINES.length)](name);
-    showBubble(line);
+    showBubble(info?.nutrition ? `${line}（${info.nutrition}）` : line);
     speak(line);
     // 预留 3D 模型扩展桥接（未注册则静默）
     try {
