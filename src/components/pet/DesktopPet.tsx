@@ -59,16 +59,17 @@ const CIRCLE_ANGLE = Math.PI * 2;
 const PET_SIZE = 80;
 const MARGIN = 16;
 
-// ========== 新增：桌宠表情帧（透明底 PNG，public/pet/ 目录，相对路径）==========
+// ========== 新增：桌宠表情帧（透明底 PNG，public/images/pet/ 目录，相对路径）==========
 // 状态管理对象：6 张图片全部登记于此，切换表情时带 300ms 淡入淡出过渡。
-// 注意：图片为 public 静态资源，统一由 CSS 等比适配容器尺寸，避免切换跳动。
+// 注意：路径为 /images/pet/xxx.png（不要加 public），文件名全部小写，与磁盘一致；
+// 图片为 public 静态资源，统一由 CSS 等比适配容器尺寸，避免切换跳动。
 const petFrames = {
-  idle: "/pet/pet_idle.png", // 待机
-  happy: "/pet/pet_happy.png", // 开心
-  angry: "/pet/pet_angry.png", // 生气
-  surprised: "/pet/pet_surprise.png", // 惊讶
-  sad: "/pet/pet_sad.png", // 委屈
-  eat: "/pet/pet_eat.png", // 进食
+  idle: "/images/pet/pet_idle.png", // 待机
+  happy: "/images/pet/pet_happy.png", // 开心
+  angry: "/images/pet/pet_angry.png", // 生气
+  surprised: "/images/pet/pet_surprise.png", // 惊讶
+  sad: "/images/pet/pet_sad.png", // 委屈
+  eat: "/images/pet/pet_eat.png", // 进食
 } as const;
 
 // 状态 → 表情帧映射（多个动画状态共用同一表情图）
