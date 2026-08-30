@@ -59,6 +59,39 @@ const CIRCLE_ANGLE = Math.PI * 2;
 const PET_SIZE = 80;
 const MARGIN = 16;
 
+// ========== 新增：桌宠表情帧（透明底 PNG，public/pet/ 目录，相对路径）==========
+// 状态管理对象：6 张图片全部登记于此，切换表情时带 300ms 淡入淡出过渡。
+// 注意：图片为 public 静态资源，统一由 CSS 等比适配容器尺寸，避免切换跳动。
+const petFrames = {
+  idle: "/pet/pet_idle.png", // 待机
+  happy: "/pet/pet_happy.png", // 开心
+  angry: "/pet/pet_angry.png", // 生气
+  surprised: "/pet/pet_surprise.png", // 惊讶
+  sad: "/pet/pet_sad.png", // 委屈
+  eat: "/pet/pet_eat.png", // 进食
+} as const;
+
+// 状态 → 表情帧映射（多个动画状态共用同一表情图）
+function petFrameForState(s: PetState): string {
+  switch (s) {
+    case "happy":
+    case "laughing": // 挠痒成功 → 开心
+    case "spinning": // 转圈欢快 → 开心
+      return petFrames.happy;
+    case "angry":
+      return petFrames.angry;
+    case "sad":
+      return petFrames.sad;
+    case "eating":
+      return petFrames.eat;
+    case "reacting": // 点击/惊讶反应 → 惊讶
+      return petFrames.surprised;
+    default:
+      // idle / walking / confused / scared / relieved → 待机帧
+      return petFrames.idle;
+  }
+}
+
 // 长按拖动：按住后位移超过该阈值（px）判定为拖拽，屏蔽本次点击
 const DRAG_THRESHOLD = 8;
 
@@ -389,6 +422,31 @@ export function DesktopPet() {
   const [bubble, setBubble] = useState<string | null>(null);
   const [emoji, setEmoji] = useState<string | null>(null);
   const [showClose, setShowClose] = useState(false);
+
+  // ---- 新增：表情帧切换（300ms 淡入淡出过渡）----
+  const [frameSrc, setFrameSrc] = useState<string>(petFrames.idle); // 当前表情图片
+  const [frameVisible, setFrameVisible] = useState(true); // 淡入淡出透明度开关
+  const displayedSrcRef = useRef<string>(petFrames.idle); // 实际显示中的表情图（供快速切换判断）
+  const frameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 监听状态变化：先淡出 300ms → 切换图片 → 淡入
+  useEffect(() => {
+    const next = petFrameForState(state);
+    if (next === displayedSrcRef.current) {
+      // 目标表情就是当前显示的：确保可见（覆盖淡出中间态被快速切回的场景）
+      setFrameVisible(true);
+      return;
+    }
+    setFrameVisible(false);
+    if (frameTimerRef.current) clearTimeout(frameTimerRef.current);
+    frameTimerRef.current = setTimeout(() => {
+      displayedSrcRef.current = next;
+      setFrameSrc(next);
+      setFrameVisible(true);
+    }, 300);
+    return () => {
+      if (frameTimerRef.current) clearTimeout(frameTimerRef.current);
+    };
+  }, [state]);
 
   // ---- 新增：持久化状态（localStorage，惰性初始化，避免挂载时被空值覆盖）----
   const [calmUntil, setCalmUntil] = useState<number | null>(() =>
@@ -1057,17 +1115,14 @@ export function DesktopPet() {
     }
   };
 
-  // 进食：切换进食 → 开心状态，播报 AI 趣味台词 + 语音，并调用 3D 桥接（如有）
+  // 进食：切换进食表情，1000ms 后自动切回待机，播报 AI 趣味台词 + 语音，并调用 3D 桥接（如有）
   const feedNow = () => {
     const info = feedRef.current;
     const name = info?.name ?? "食物";
     setState("eating");
     if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
-    stateTimerRef.current = setTimeout(() => setState("happy"), 900);
-    // 进食完毕后回到待机（避免覆盖用户后续交互状态）
-    setTimeout(() => {
-      setState((s) => (s === "happy" ? "idle" : s));
-    }, 2400);
+    // 投喂成功显示进食图（pet_eat），1000ms 后自动切回待机
+    stateTimerRef.current = setTimeout(() => setState("idle"), 1000);
     // AI 生成趣味台词 + 语音播报（带营养信息：后端返回 calorie 等）
     const line = FOOD_LINES[Math.floor(Math.random() * FOOD_LINES.length)](name);
     showBubble(info?.nutrition ? `${line}（${info.nutrition}）` : line);
@@ -1648,8 +1703,8 @@ export function DesktopPet() {
     // 纯点击（几乎未移动）
     if (moved < 5) {
       if (g.zone === "head") {
-        // 点击脑袋 → 捂脑袋委屈生气
-        setState("angry");
+        // 点击脑袋 → 委屈表情（pet_sad）
+        setState("sad");
         showBubble("呜呜~不许碰我的脑袋！😤");
         setEmoji("😤");
         if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current);
@@ -1893,12 +1948,13 @@ export function DesktopPet() {
           </button>
         )}
 
-        {/* 图片精灵 */}
+        {/* 图片精灵：表情帧随状态切换（300ms 淡入淡出） */}
         <img
-          src="/pet/pet.png"
+          src={frameSrc}
           alt="My Baby 桌宠"
           className={`pet-sprite ${petAnimClass}`}
           style={{
+            opacity: frameVisible ? 1 : 0,
             transform: facing === "left" ? "scaleX(-1)" : "none",
           }}
           draggable={false}

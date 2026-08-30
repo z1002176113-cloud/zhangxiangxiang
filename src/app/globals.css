@@ -238,7 +238,8 @@ body {
   height: 100%;
   object-fit: contain;
   image-rendering: pixelated;
-  transition: transform 0.15s ease;
+  /* 表情切换淡入淡出过渡（300ms） */
+  transition: opacity 0.3s ease, transform 0.15s ease;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
 }
 
