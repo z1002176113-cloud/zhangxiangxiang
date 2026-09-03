@@ -96,9 +96,6 @@ function petFrameForState(s: PetState): string {
 // 长按拖动：按住后位移超过该阈值（px）判定为拖拽，屏蔽本次点击
 const DRAG_THRESHOLD = 8;
 
-// 桌宠坐标持久化存储键（拖拽结束保存，刷新页面位置不重置）
-const PET_POS_KEY = "my-baby-pet-pos";
-
 // ========== 新增：拍照投喂（图像识别 + 投喂动画 + 语音播报）==========
 const FEED_DAILY_LIMIT = 5; // 每日拍照投喂上限（本地持久化，0 点重置）
 const FEED_LIMIT_KEY = "my-baby-pet-feed-limit"; // 每日次数持久化键
@@ -564,7 +561,6 @@ export function DesktopPet() {
     isWandering: boolean;
     pauseUntil: number;
   }>({ targetX: 0, speed: 0, isWandering: false, pauseUntil: 0 });
-  const animFrameRef = useRef<number>(0);
   const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emojiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -682,87 +678,20 @@ export function DesktopPet() {
     };
   }, []);
 
-  // ---- 初始化位置：优先恢复拖拽保存的坐标（localStorage），否则默认右下角 ----
+  // ---- 初始化位置：固定停靠在视口右下角（可拖走，刷新后回到右下角）----
   // 客户端首次渲染保持与 SSR 一致的 -1（避免 hydration 不匹配导致 DOM 不更新），
-  // 挂载后再读取本地坐标并渲染，DOM 才能正确恢复位置
+  // 挂载后再设置右下角坐标，DOM 才能正确渲染位置
   useEffect(() => {
-    const saved = loadJSON<Position>(PET_POS_KEY, { x: -1, y: -1 });
-    if (saved.x >= 0 && saved.y >= 0) {
-      setPosition(clampPosition(saved.x, saved.y));
-    } else {
-      setPosition({
-        x: window.innerWidth - PET_SIZE - MARGIN,
-        y: window.innerHeight - PET_SIZE - MARGIN,
-      });
-    }
+    setPosition({
+      x: window.innerWidth - PET_SIZE - MARGIN,
+      y: window.innerHeight - PET_SIZE - MARGIN,
+    });
   }, [clampPosition]);
 
   // ---- 同步最新坐标到 ref（拖拽结束保存时使用）----
   useEffect(() => {
     positionRef.current = position;
   }, [position]);
-
-  // ---- 自动游走逻辑（原有，保留）----
-  useEffect(() => {
-    let lastTime = performance.now();
-
-    const wander = (currentTime: number) => {
-      const deltaTime = currentTime - lastTime;
-      lastTime = currentTime;
-
-      // 如果在暂停中，不移动
-      if (currentTime < wanderRef.current.pauseUntil) {
-        animFrameRef.current = requestAnimationFrame(wander);
-        return;
-      }
-
-      // 拖拽中：不自动游走，避免行走动画与拖拽位置互相冲突
-      if (isDragging) {
-        animFrameRef.current = requestAnimationFrame(wander);
-        return;
-      }
-
-      // 如果没有目标或到达目标，设置新的漫游目标
-      if (!wanderRef.current.isWandering) {
-        const maxX = window.innerWidth - PET_SIZE;
-        const newX = MARGIN + Math.random() * (maxX - MARGIN);
-        wanderRef.current.targetX = newX;
-        wanderRef.current.speed = 30 + Math.random() * 50;
-        wanderRef.current.isWandering = true;
-        setState("walking");
-
-        if (newX > position.x) setFacing("right");
-        else setFacing("left");
-      }
-
-      const targetX = wanderRef.current.targetX;
-      const currentX = position.x;
-      const diff = targetX - currentX;
-      const distance = Math.abs(diff);
-      const moveDistance = (wanderRef.current.speed * deltaTime) / 1000;
-
-      if (distance <= moveDistance) {
-        wanderRef.current.isWandering = false;
-        setState("idle");
-        wanderRef.current.pauseUntil =
-          currentTime + 2000 + Math.random() * 3000;
-
-        if (Math.random() < 0.3) {
-          showBubble(
-            BUBBLE_MESSAGES[Math.floor(Math.random() * BUBBLE_MESSAGES.length)]
-          );
-        }
-      } else {
-        const newX = currentX + (diff > 0 ? moveDistance : -moveDistance);
-        setPosition((prev) => clampPosition(newX, prev.y));
-      }
-
-      animFrameRef.current = requestAnimationFrame(wander);
-    };
-
-    animFrameRef.current = requestAnimationFrame(wander);
-    return () => cancelAnimationFrame(animFrameRef.current);
-  }, [position.x, clampPosition, isDragging]);
 
   // ========== 基础工具函数 ==========
 
@@ -1668,12 +1597,10 @@ export function DesktopPet() {
       return;
     }
 
-    // ---- 拖拽结束：保存新坐标 + 播放落地动画（疑惑→害怕→舒一口气）----
+    // ---- 拖拽结束：播放落地动画（疑惑→害怕→舒一口气），刷新后回到右下角不再保存位置 ----
     if (isDragging || dragRef.current.dragged) {
       setIsDragging(false);
       setShowClose(false);
-      // 保存桌宠新坐标到本地存储，刷新页面位置不重置
-      saveJSON(PET_POS_KEY, positionRef.current);
       // 拖拽松手落地 → 疑惑 → 害怕 → 长舒一口气 三段动画
       playSequence([
         { s: "confused", ms: 1000 },
