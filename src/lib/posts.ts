@@ -46,7 +46,7 @@ export function getAllPosts(): PostMeta[] {
   return getSlugs()
     .map(readPostMeta)
     .filter((p): p is PostMeta => p !== null)
-    .sort((a, b) => (a.date < b.date ? 1 : -1));
+    .sort((a, b) => (a.date > b.date ? 1 : -1));
 }
 
 export async function getPostBySlug(slug: string): Promise<Post | null> {
