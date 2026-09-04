@@ -678,6 +678,18 @@ export function DesktopPet() {
     };
   }, []);
 
+  // ---- 窗口缩放时重新约束坐标，避免桌宠图标跑到视口外 ----
+  useEffect(() => {
+    const onResize = () => {
+      setPosition((prev) => {
+        const clamped = clampPosition(prev.x, prev.y);
+        return clamped.x === prev.x && clamped.y === prev.y ? prev : clamped;
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [clampPosition]);
+
   // ---- 初始化位置：固定停靠在视口右下角（可拖走，刷新后回到右下角）----
   // 客户端首次渲染保持与 SSR 一致的 -1（避免 hydration 不匹配导致 DOM 不更新），
   // 挂载后再设置右下角坐标，DOM 才能正确渲染位置
